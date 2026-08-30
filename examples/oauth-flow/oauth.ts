@@ -14,6 +14,7 @@ const envPath = join(exampleDir, ".env.local");
 
 function parseLocalEnv(): Record<string, string> {
   if (!existsSync(envPath)) return {};
+  chmodSync(envPath, 0o600);
   return Object.fromEntries(
     readFileSync(envPath, "utf8")
       .split(/\r?\n/)
