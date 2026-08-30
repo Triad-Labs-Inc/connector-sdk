@@ -1,4 +1,5 @@
 import { drive_v3, google } from "googleapis";
+import { createHash } from "node:crypto";
 
 export const DRIVE_READONLY_SCOPE =
   "https://www.googleapis.com/auth/drive.readonly";
@@ -59,6 +60,11 @@ export class ConnectorAuthError extends Error {
 /** Google Drive scope configuration is invalid. */
 export class ConnectorScopeError extends Error {
   override readonly name = "ConnectorScopeError";
+}
+
+/** A Drive item cannot be extracted through the configured connector. */
+export class ConnectorExtractionError extends Error {
+  override readonly name = "ConnectorExtractionError";
 }
 
 interface ServiceAccountKey {
@@ -285,6 +291,7 @@ function toDocument(file: drive_v3.Schema$File): ConnectorDocument | undefined {
 /** A configured Google Drive sync connector. */
 export interface GDriveConnector {
   listChanges(cursor?: GDriveSyncCursor): Promise<GDriveSyncResult>;
+  fetchContent(doc: ConnectorDocument): Promise<ConnectorDocument>;
 }
 
 /** Creates a connector that performs backfill and cursor-based incremental sync. */
@@ -304,6 +311,62 @@ export function createGDriveConnector(
   const drive = createDriveClient(options.auth);
   const knownTargets = new Set(options.knownTargets ?? []);
   let resolvedFolderId: Promise<string | undefined> | undefined;
+
+  async function fetchContent(
+    doc: ConnectorDocument,
+  ): Promise<ConnectorDocument> {
+    if (doc.mimeType === FOLDER_MIME || doc.mimeType === SHORTCUT_MIME) {
+      throw new ConnectorExtractionError(
+        `Cannot extract Google Drive item with mimeType ${doc.mimeType}`,
+      );
+    }
+
+    const exportMimeType = new Map([
+      ["application/vnd.google-apps.document", "text/markdown"],
+      ["application/vnd.google-apps.spreadsheet", "text/csv"],
+      ["application/vnd.google-apps.presentation", "text/plain"],
+    ]).get(doc.mimeType);
+
+    let markdown: string;
+    if (exportMimeType) {
+      const response = await drive.files.export(
+        {
+          fileId: doc.providerDocId,
+          mimeType: exportMimeType,
+          supportsAllDrives: true,
+        } as drive_v3.Params$Resource$Files$Export,
+        { responseType: "text" },
+      ) as { data: unknown };
+      markdown = typeof response.data === "string"
+        ? response.data
+        : String(response.data);
+    } else {
+      if (!options.parser) {
+        throw new ConnectorExtractionError(
+          `No parser configured for mimeType ${doc.mimeType}`,
+        );
+      }
+      const response = await drive.files.get(
+        {
+          fileId: doc.providerDocId,
+          alt: "media",
+          supportsAllDrives: true,
+        },
+        { responseType: "arraybuffer" },
+      );
+      const data = response.data as unknown;
+      const bytes = data instanceof Uint8Array
+        ? data
+        : new Uint8Array(data as ArrayBuffer);
+      markdown = await options.parser(bytes, doc.mimeType);
+    }
+
+    return {
+      ...doc,
+      markdown,
+      contentHash: createHash("sha256").update(markdown).digest("hex"),
+    };
+  }
 
   const getFolderId = (): Promise<string | undefined> => {
     resolvedFolderId ??= configuredFolderId === "root"
@@ -503,5 +566,6 @@ export function createGDriveConnector(
 
   return {
     listChanges: (cursor) => (cursor ? incremental(cursor) : backfill()),
+    fetchContent,
   };
 }
