@@ -18,6 +18,21 @@ See [`oauth-flow/README.md`](oauth-flow/README.md) for the one-time Google Cloud
 setup. Every later run is just `pnpm oauth`, then click the link if authorization
 is needed.
 
+## `sync-test/`
+
+OAuth-powered manual harness for the sync engine. Run it once to backfill a real
+Drive folder, change a file, then run it again to see cursor-based incremental
+changes:
+
+```bash
+cd examples/sync-test
+pnpm sync --folder <id-or-url>
+```
+
+It reuses credentials from `oauth-flow/.env.local`. See
+[`sync-test/README.md`](sync-test/README.md) for cursor reset and all-files
+options.
+
 ## `smoke/`
 
 Tier-2 auth smoke test: proves a service-account credential actually works
