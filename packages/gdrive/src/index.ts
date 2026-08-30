@@ -221,8 +221,13 @@ export interface GDriveConnectorOptions {
   auth: GDriveCredentials;
   scope: GDriveScope;
   parser?: ParserFn;
-  /** Shortcut target IDs restored from a previous backfill result. */
-  knownTargets?: string[];
+  /** Shortcut targets restored from a previous sync result. */
+  knownTargets?: VisitedTargets;
+}
+
+export interface VisitedTargets {
+  files: string[];
+  folders: string[];
 }
 
 /** Opaque state used to resume a cursor-based incremental sync. */
@@ -248,8 +253,8 @@ export interface GDriveSyncResult {
   removed: string[];
   skipped: SkippedEntry[];
   cursor: GDriveSyncCursor;
-  /** Shortcut target IDs discovered during backfill, for persistence by consumers. */
-  visitedTargets?: string[];
+  /** Shortcut targets discovered during sync, for persistence by consumers. */
+  visitedTargets?: VisitedTargets;
 }
 
 const DRIVE_FOLDER_ID = /^[A-Za-z0-9_-]+$/;
@@ -322,7 +327,8 @@ export function createGDriveConnector(
     );
   }
   const drive = createDriveClient(options.auth);
-  const knownTargets = new Set(options.knownTargets ?? []);
+  const knownTargetFiles = new Set(options.knownTargets?.files ?? []);
+  const knownTargetFolders = new Set(options.knownTargets?.folders ?? []);
   let resolvedFolderId: Promise<string | undefined> | undefined;
 
   async function fetchContent(
@@ -422,12 +428,12 @@ export function createGDriveConnector(
           recordSkip("shortcut_cycle_detected");
           return;
         }
-        if (knownTargets.has(targetId)) return;
+        if (knownTargetFiles.has(targetId) || knownTargetFolders.has(targetId)) return;
         resolvingTargets.add(targetId);
         try {
           if (file.shortcutDetails?.targetMimeType === FOLDER_MIME) {
             await visit({ id: targetId, mimeType: FOLDER_MIME }, traverseFolders);
-            knownTargets.add(targetId);
+            knownTargetFolders.add(targetId);
             return;
           }
           let target;
@@ -446,7 +452,8 @@ export function createGDriveConnector(
             return;
           }
           await visit(target.data, traverseFolders);
-          knownTargets.add(targetId);
+          if (target.data.mimeType === FOLDER_MIME) knownTargetFolders.add(targetId);
+          else knownTargetFiles.add(targetId);
         } finally {
           resolvingTargets.delete(targetId);
         }
@@ -503,7 +510,10 @@ export function createGDriveConnector(
       removed: [],
       skipped,
       cursor: { pageToken: start.data.startPageToken },
-      visitedTargets: [...knownTargets],
+      visitedTargets: {
+        files: [...knownTargetFiles],
+        folders: [...knownTargetFolders],
+      },
     };
   }
 
@@ -516,12 +526,15 @@ export function createGDriveConnector(
     const visitedFiles = new Set<string>();
     const scopeCache = new Map<string, boolean>();
     if (folderId) scopeCache.set(folderId, true);
-    for (const targetId of knownTargets) scopeCache.set(targetId, true);
+    for (const targetId of knownTargetFiles) scopeCache.set(targetId, true);
+    for (const targetId of knownTargetFolders) scopeCache.set(targetId, true);
     let requestToken = cursor.pageToken;
     let durableToken = cursor.pageToken;
 
     const inScope = async (file: drive_v3.Schema$File): Promise<boolean> => {
-      if (!folderId || (file.id && knownTargets.has(file.id))) return true;
+      if (!folderId || (file.id && (
+        knownTargetFiles.has(file.id) || knownTargetFolders.has(file.id)
+      ))) return true;
       const path: string[] = [];
       const active = new Set<string>();
       let parents = file.parents ?? [];
@@ -554,7 +567,12 @@ export function createGDriveConnector(
     };
 
     const resolvingTargets = new Set<string>();
-    const emit = async (file: drive_v3.Schema$File): Promise<void> => {
+    const walkedFolders = new Set<string>();
+    let walkTargetFolder: (id: string) => Promise<void>;
+    const emit = async (
+      file: drive_v3.Schema$File,
+      traverseFolders = false,
+    ): Promise<void> => {
       if (!file.id || file.trashed) return;
       if (file.mimeType === SHORTCUT_MIME) {
         const targetId = file.shortcutDetails?.targetId;
@@ -572,8 +590,9 @@ export function createGDriveConnector(
         resolvingTargets.add(targetId);
         try {
           if (file.shortcutDetails?.targetMimeType === FOLDER_MIME) {
-            knownTargets.add(targetId);
+            knownTargetFolders.add(targetId);
             scopeCache.set(targetId, true);
+            if (traverseFolders) await walkTargetFolder(targetId);
             return;
           }
           let target;
@@ -591,20 +610,46 @@ export function createGDriveConnector(
             recordSkip("shortcut_target_trashed");
             return;
           }
-          await emit(target.data);
-          knownTargets.add(targetId);
+          await emit(target.data, traverseFolders);
+          if (target.data.mimeType === FOLDER_MIME) knownTargetFolders.add(targetId);
+          else knownTargetFiles.add(targetId);
           scopeCache.set(targetId, true);
         } finally {
           resolvingTargets.delete(targetId);
         }
         return;
       }
-      if (file.mimeType === FOLDER_MIME) return;
+      if (file.mimeType === FOLDER_MIME) {
+        if (traverseFolders) await walkTargetFolder(file.id);
+        return;
+      }
       if (visitedFiles.has(file.id)) return;
       visitedFiles.add(file.id);
       const document = toDocument(file);
       if (document) documents.push(document);
     };
+
+    walkTargetFolder = async (id: string): Promise<void> => {
+      if (walkedFolders.has(id)) return;
+      walkedFolders.add(id);
+      let pageToken: string | undefined;
+      do {
+        const page = await drive.files.list({
+          q: `'${id}' in parents and trashed = false`,
+          fields: `nextPageToken,files(${FILE_FIELDS})`,
+          pageSize: 1000,
+          pageToken,
+          supportsAllDrives: true,
+          includeItemsFromAllDrives: true,
+        });
+        for (const file of page.data.files ?? []) await emit(file, true);
+        pageToken = page.data.nextPageToken ?? undefined;
+      } while (pageToken);
+    };
+
+    for (const targetFolderId of [...knownTargetFolders]) {
+      await walkTargetFolder(targetFolderId);
+    }
 
     for (;;) {
       const page = await drive.changes.list({
@@ -628,7 +673,16 @@ export function createGDriveConnector(
       if (!page.data.nextPageToken) break;
       requestToken = page.data.nextPageToken;
     }
-    return { documents, removed, skipped, cursor: { pageToken: durableToken } };
+    return {
+      documents,
+      removed,
+      skipped,
+      cursor: { pageToken: durableToken },
+      visitedTargets: {
+        files: [...knownTargetFiles],
+        folders: [...knownTargetFolders],
+      },
+    };
   }
 
   return {

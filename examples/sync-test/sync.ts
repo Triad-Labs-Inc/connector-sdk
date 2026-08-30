@@ -3,6 +3,7 @@ import {
   type ConnectorDocument,
   type GDriveCredentials,
   type GDriveSyncCursor,
+  type VisitedTargets,
 } from "@triadlabs/connectors-gdrive";
 import {
   chmodSync,
@@ -40,7 +41,7 @@ function parseLocalEnv(): Record<string, string> {
 
 interface SavedState {
   cursor: GDriveSyncCursor;
-  visitedTargets: string[];
+  visitedTargets: VisitedTargets;
   savedAt: string;
 }
 
@@ -152,9 +153,10 @@ const connector = createGDriveConnector({
 
 async function backfill(): Promise<void> {
   const result = await connector.listChanges();
-  const visitedTargets = result.visitedTargets ?? [];
+  const visitedTargets = result.visitedTargets ?? { files: [], folders: [] };
+  const targetCount = visitedTargets.files.length + visitedTargets.folders.length;
   console.log(
-    `backfill complete: ${result.documents.length} documents, ${visitedTargets.length} shortcut targets`,
+    `backfill complete: ${result.documents.length} documents, ${targetCount} shortcut targets`,
   );
   printDocuments(result.documents);
   persistCursor({
