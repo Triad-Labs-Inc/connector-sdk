@@ -59,8 +59,8 @@ interface ServiceAccountKey {
   private_key?: unknown;
 }
 
-function requireNonEmpty(value: string, field: string): void {
-  if (value.trim() === "") {
+function requireNonEmpty(value: unknown, field: string): asserts value is string {
+  if (typeof value !== "string" || value.trim() === "") {
     throw new ConnectorAuthError(`${field} must be a non-empty string`);
   }
 }
@@ -137,7 +137,13 @@ export function createDriveClient(
       throw new ConnectorAuthError("keyJson must contain valid JSON");
     }
 
-    if (typeof key.client_email !== "string" || key.client_email.trim() === "") {
+    if (
+      typeof key !== "object" ||
+      key === null ||
+      Array.isArray(key) ||
+      typeof key.client_email !== "string" ||
+      key.client_email.trim() === ""
+    ) {
       throw new ConnectorAuthError(
         "Service-account keyJson must include a non-empty client_email",
       );

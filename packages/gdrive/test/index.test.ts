@@ -78,6 +78,15 @@ describe("createDriveClient", () => {
     ).toThrow(ConnectorAuthError);
   });
 
+  it.each(["null", "true", "[]", '"key"']) (
+    "rejects non-object service-account JSON: %s",
+    (keyJson) => {
+      expect(() =>
+        createDriveClient({ type: "service-account", keyJson }),
+      ).toThrow(ConnectorAuthError);
+    },
+  );
+
   it("rejects a service-account key without private_key", () => {
     const keyJson = JSON.stringify({
       client_email: "connector@example.iam.gserviceaccount.com",
