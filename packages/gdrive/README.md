@@ -28,10 +28,12 @@ credentials, run an OAuth consent redirect, or schedule synchronization.
 
 ## Sync status
 
-Step 3 is shipped: `createGDriveConnector` supports recursive folder backfills,
+Step 4 is shipped: `createGDriveConnector` supports recursive folder backfills,
 Drive shortcut resolution, cursor-based incremental changes, folder ancestry
-scope checks, shared-drive flags, deletion IDs, and metadata-complete document
-stubs. Content extraction is intentionally deferred to step 4.
+scope checks, shared-drive flags, deletion IDs, lazy content extraction, and
+SHA-256 content hashes. Shortcut target folders are re-walked during incremental
+syncs so newly created descendants are discovered even without an ancestor
+change event.
 
 Persist `visitedTargets` from a backfill result and pass it back as
 `knownTargets` when recreating the connector so incremental sync retains scope

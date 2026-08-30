@@ -430,7 +430,10 @@ describe("createGDriveConnector listChanges", () => {
       : { id: fileId, name: "Folder", mimeType: "application/vnd.google-apps.folder" } }));
     const result = await createGDriveConnector({ auth, scope: { folder: "root" } }).listChanges();
     expect(result.documents.map((d) => d.providerDocId)).toEqual(["target-file", "nested"]);
-    expect(result.visitedTargets).toEqual(["target-file", "target-folder"]);
+    expect(result.visitedTargets).toEqual({
+      files: ["target-file"],
+      folders: ["target-folder"],
+    });
     expect(filesGetMock).toHaveBeenCalledWith(expect.objectContaining({ fileId: "target-file", supportsAllDrives: true }));
   });
 
@@ -555,6 +558,7 @@ describe("createGDriveConnector listChanges", () => {
   });
 
   it("restores persisted shortcut targets for incremental scope", async () => {
+    filesListMock.mockResolvedValue({ data: { files: [] } });
     changesListMock.mockResolvedValue({ data: { newStartPageToken: "fresh", changes: [
       { fileId: "nested", file: { id: "nested", name: "Nested", mimeType: "text/plain", parents: ["target-folder"] } },
     ] } });
@@ -563,10 +567,35 @@ describe("createGDriveConnector listChanges", () => {
     const result = await createGDriveConnector({
       auth,
       scope: { folder: "root" },
-      knownTargets: ["target-folder"],
+      knownTargets: { files: [], folders: ["target-folder"] },
     }).listChanges({ pageToken: "start" });
 
     expect(result.documents.map((document) => document.providerDocId)).toEqual(["nested"]);
+  });
+
+  it("re-walks known shortcut target folders before incremental changes", async () => {
+    filesListMock.mockResolvedValue({ data: { files: [
+      { id: "new-file", name: "New file", mimeType: "text/plain", parents: ["target-folder"] },
+    ] } });
+    changesListMock.mockResolvedValue({ data: {
+      newStartPageToken: "fresh",
+      changes: [{
+        fileId: "new-file",
+        file: { id: "new-file", name: "New file changed", mimeType: "text/plain", parents: ["target-folder"] },
+      }],
+    } });
+
+    const result = await createGDriveConnector({
+      auth,
+      scope: { folder: "root" },
+      knownTargets: { files: [], folders: ["target-folder"] },
+    }).listChanges({ pageToken: "start" });
+
+    expect(result.documents.map((document) => document.providerDocId)).toEqual(["new-file"]);
+    expect(filesListMock).toHaveBeenCalledWith(expect.objectContaining({
+      q: "'target-folder' in parents and trashed = false",
+    }));
+    expect(result.visitedTargets).toEqual({ files: [], folders: ["target-folder"] });
   });
 
   it("skips incremental folders and resolves shortcuts using backfill MIME rules", async () => {
