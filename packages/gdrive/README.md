@@ -25,3 +25,10 @@ const oauthDrive = createDriveClient({
 
 Both clients use the `drive.readonly` scope. The package does not store
 credentials, run an OAuth consent redirect, or schedule synchronization.
+
+## Sync status
+
+Step 3 is shipped: `createGDriveConnector` supports recursive folder backfills,
+Drive shortcut resolution, cursor-based incremental changes, folder ancestry
+scope checks, shared-drive flags, deletion IDs, and metadata-complete document
+stubs. Content extraction is intentionally deferred to step 4.
