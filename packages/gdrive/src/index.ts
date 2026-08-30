@@ -215,6 +215,8 @@ export interface GDriveConnectorOptions {
   auth: GDriveCredentials;
   scope: GDriveScope;
   parser?: ParserFn;
+  /** Shortcut target IDs restored from a previous backfill result. */
+  knownTargets?: string[];
 }
 
 /** Opaque state used to resume a cursor-based incremental sync. */
@@ -247,7 +249,7 @@ export function parseGDriveFolderId(folder: string): string {
     } catch {
       throw new ConnectorScopeError("scope.folder must be a valid Drive folder URL");
     }
-    const match = url.pathname.match(/^\/drive\/folders\/([^/]+)\/?$/);
+    const match = url.pathname.match(/^\/drive\/(?:u\/\d+\/)?folders\/([^/]+)\/?$/);
     if (url.hostname !== "drive.google.com" || !match) {
       throw new ConnectorScopeError("scope.folder must be a Drive folder URL");
     }
@@ -291,18 +293,31 @@ export function createGDriveConnector(
 ): GDriveConnector {
   requireRecord(options, "options");
   requireRecord(options.scope, "scope");
-  const folderId = "folder" in options.scope
+  const configuredFolderId = "folder" in options.scope
     ? parseGDriveFolderId(options.scope.folder as string)
     : undefined;
-  if (!folderId && options.scope.allFiles !== true) {
+  if (!configuredFolderId && options.scope.allFiles !== true) {
     throw new ConnectorScopeError(
       'scope must contain either "folder" or allFiles: true',
     );
   }
   const drive = createDriveClient(options.auth);
-  const knownTargets = new Set<string>();
+  const knownTargets = new Set(options.knownTargets ?? []);
+  let resolvedFolderId: Promise<string | undefined> | undefined;
+
+  const getFolderId = (): Promise<string | undefined> => {
+    resolvedFolderId ??= configuredFolderId === "root"
+      ? drive.files.get({
+          fileId: "root",
+          fields: "id",
+          supportsAllDrives: true,
+        }).then(({ data }) => data.id ?? "root")
+      : Promise.resolve(configuredFolderId);
+    return resolvedFolderId;
+  };
 
   async function backfill(): Promise<GDriveSyncResult> {
+    const folderId = configuredFolderId;
     const start = await drive.changes.getStartPageToken({ supportsAllDrives: true });
     if (!start.data.startPageToken) {
       throw new Error("Google Drive returned no start page token");
@@ -310,6 +325,7 @@ export function createGDriveConnector(
     const documents: ConnectorDocument[] = [];
     const visitedFolders = new Set<string>();
     const visitedFiles = new Set<string>();
+    const resolvingTargets = new Set<string>();
 
     const visit = async (
       file: drive_v3.Schema$File,
@@ -318,14 +334,19 @@ export function createGDriveConnector(
       if (!file.id || file.trashed) return;
       if (file.mimeType === SHORTCUT_MIME) {
         const targetId = file.shortcutDetails?.targetId;
-        if (!targetId || knownTargets.has(targetId)) return;
-        knownTargets.add(targetId);
-        const target = await drive.files.get({
-          fileId: targetId,
-          fields: FILE_FIELDS,
-          supportsAllDrives: true,
-        });
-        await visit(target.data, traverseFolders);
+        if (!targetId || knownTargets.has(targetId) || resolvingTargets.has(targetId)) return;
+        resolvingTargets.add(targetId);
+        try {
+          const target = await drive.files.get({
+            fileId: targetId,
+            fields: FILE_FIELDS,
+            supportsAllDrives: true,
+          });
+          await visit(target.data, traverseFolders);
+          knownTargets.add(targetId);
+        } finally {
+          resolvingTargets.delete(targetId);
+        }
         return;
       }
       if (file.mimeType === FOLDER_MIME) {
@@ -383,11 +404,14 @@ export function createGDriveConnector(
   }
 
   async function incremental(cursor: GDriveSyncCursor): Promise<GDriveSyncResult> {
+    const folderId = await getFolderId();
     requireNonEmpty(cursor.pageToken, "cursor.pageToken");
     const documents: ConnectorDocument[] = [];
     const removed: string[] = [];
+    const visitedFiles = new Set<string>();
     const scopeCache = new Map<string, boolean>();
     if (folderId) scopeCache.set(folderId, true);
+    for (const targetId of knownTargets) scopeCache.set(targetId, true);
     let requestToken = cursor.pageToken;
     let durableToken = cursor.pageToken;
 
@@ -424,6 +448,34 @@ export function createGDriveConnector(
       return false;
     };
 
+    const resolvingTargets = new Set<string>();
+    const emit = async (file: drive_v3.Schema$File): Promise<void> => {
+      if (!file.id || file.trashed) return;
+      if (file.mimeType === SHORTCUT_MIME) {
+        const targetId = file.shortcutDetails?.targetId;
+        if (!targetId || resolvingTargets.has(targetId)) return;
+        resolvingTargets.add(targetId);
+        try {
+          const target = await drive.files.get({
+            fileId: targetId,
+            fields: FILE_FIELDS,
+            supportsAllDrives: true,
+          });
+          await emit(target.data);
+          knownTargets.add(targetId);
+          scopeCache.set(targetId, true);
+        } finally {
+          resolvingTargets.delete(targetId);
+        }
+        return;
+      }
+      if (file.mimeType === FOLDER_MIME) return;
+      if (visitedFiles.has(file.id)) return;
+      visitedFiles.add(file.id);
+      const document = toDocument(file);
+      if (document) documents.push(document);
+    };
+
     for (;;) {
       const page = await drive.changes.list({
         pageToken: requestToken,
@@ -438,8 +490,7 @@ export function createGDriveConnector(
         if (change.removed || !change.file || change.file.trashed) {
           removed.push(id);
         } else if (await inScope(change.file)) {
-          const document = toDocument(change.file);
-          if (document) documents.push(document);
+          await emit(change.file);
         }
       }
       // This page is fully processed; only now may its successor become durable.

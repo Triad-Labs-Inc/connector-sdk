@@ -32,3 +32,7 @@ Step 3 is shipped: `createGDriveConnector` supports recursive folder backfills,
 Drive shortcut resolution, cursor-based incremental changes, folder ancestry
 scope checks, shared-drive flags, deletion IDs, and metadata-complete document
 stubs. Content extraction is intentionally deferred to step 4.
+
+Persist `visitedTargets` from a backfill result and pass it back as
+`knownTargets` when recreating the connector so incremental sync retains scope
+for shortcut targets.

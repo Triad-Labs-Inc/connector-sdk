@@ -293,6 +293,7 @@ describe("Google Drive scope", () => {
     ["folder_123-abc", "folder_123-abc"],
     ["https://drive.google.com/drive/folders/folder_123", "folder_123"],
     ["https://drive.google.com/drive/folders/folder_123/?usp=sharing", "folder_123"],
+    ["https://drive.google.com/drive/u/2/folders/folder_123/?usp=sharing", "folder_123"],
   ])("parses %s", (input, expected) => {
     expect(parseGDriveFolderId(input)).toBe(expected);
   });
@@ -397,6 +398,90 @@ describe("createGDriveConnector listChanges", () => {
     changesListMock.mockResolvedValue({ data: { newStartPageToken: "fresh", changes: [{ fileId: "target", file: { id: "target", name: "Changed", mimeType: "text/plain", parents: [] } }] } });
     const result = await connector.listChanges({ pageToken: "start" });
     expect(result.documents[0]?.providerDocId).toBe("target");
+  });
+
+  it("keeps descendants of shortcut folder targets in incremental scope", async () => {
+    filesListMock.mockImplementation(async ({ q }: { q: string }) => ({ data: { files: q.includes("'root'")
+      ? [{ id: "shortcut", mimeType: "application/vnd.google-apps.shortcut", shortcutDetails: { targetId: "target-folder" } }]
+      : [{ id: "nested", name: "Nested", mimeType: "text/plain" }] } }));
+    filesGetMock.mockImplementation(async ({ fileId }: { fileId: string }) => ({ data: fileId === "target-folder"
+      ? { id: fileId, name: "Target folder", mimeType: "application/vnd.google-apps.folder" }
+      : { id: fileId } }));
+    const connector = createGDriveConnector({ auth, scope: { folder: "root" } });
+    await connector.listChanges();
+    changesListMock.mockResolvedValue({ data: { newStartPageToken: "fresh", changes: [
+      { fileId: "nested", file: { id: "nested", name: "Changed", mimeType: "text/plain", parents: ["target-folder"] } },
+    ] } });
+
+    const result = await connector.listChanges({ pageToken: "start" });
+
+    expect(result.documents.map((document) => document.providerDocId)).toEqual(["nested"]);
+  });
+
+  it("restores persisted shortcut targets for incremental scope", async () => {
+    changesListMock.mockResolvedValue({ data: { newStartPageToken: "fresh", changes: [
+      { fileId: "nested", file: { id: "nested", name: "Nested", mimeType: "text/plain", parents: ["target-folder"] } },
+    ] } });
+    filesGetMock.mockResolvedValue({ data: { id: "real-root" } });
+
+    const result = await createGDriveConnector({
+      auth,
+      scope: { folder: "root" },
+      knownTargets: ["target-folder"],
+    }).listChanges({ pageToken: "start" });
+
+    expect(result.documents.map((document) => document.providerDocId)).toEqual(["nested"]);
+  });
+
+  it("skips incremental folders and resolves shortcuts using backfill MIME rules", async () => {
+    changesListMock.mockResolvedValue({ data: { newStartPageToken: "fresh", changes: [
+      { fileId: "folder", file: { id: "folder", name: "Folder", mimeType: "application/vnd.google-apps.folder", parents: ["root"] } },
+      { fileId: "file-shortcut", file: { id: "file-shortcut", mimeType: "application/vnd.google-apps.shortcut", parents: ["root"], shortcutDetails: { targetId: "target-file" } } },
+      { fileId: "folder-shortcut", file: { id: "folder-shortcut", mimeType: "application/vnd.google-apps.shortcut", parents: ["root"], shortcutDetails: { targetId: "target-folder" } } },
+      { fileId: "cycle-shortcut", file: { id: "cycle-shortcut", mimeType: "application/vnd.google-apps.shortcut", parents: ["root"], shortcutDetails: { targetId: "cycle" } } },
+      { fileId: "nested", file: { id: "nested", name: "Nested", mimeType: "text/plain", parents: ["target-folder"] } },
+    ] } });
+    filesGetMock.mockImplementation(async ({ fileId }: { fileId: string }) => ({ data: fileId === "root"
+      ? { id: "root" }
+      : fileId === "target-file"
+        ? { id: fileId, name: "Target file", mimeType: "text/plain" }
+        : fileId === "cycle"
+          ? { id: fileId, mimeType: "application/vnd.google-apps.shortcut", shortcutDetails: { targetId: "cycle" } }
+        : { id: fileId, name: "Target folder", mimeType: "application/vnd.google-apps.folder" } }));
+
+    const result = await createGDriveConnector({ auth, scope: { folder: "root" } })
+      .listChanges({ pageToken: "start" });
+
+    expect(result.documents.map((document) => document.providerDocId)).toEqual(["target-file", "nested"]);
+  });
+
+  it("retries a shortcut target after its fetch fails", async () => {
+    filesListMock.mockResolvedValue({ data: { files: [
+      { id: "shortcut", mimeType: "application/vnd.google-apps.shortcut", shortcutDetails: { targetId: "target" } },
+    ] } });
+    filesGetMock
+      .mockRejectedValueOnce(new Error("temporary failure"))
+      .mockResolvedValueOnce({ data: { id: "target", name: "Target", mimeType: "text/plain" } });
+    const connector = createGDriveConnector({ auth, scope: { folder: "folder" } });
+
+    await expect(connector.listChanges()).rejects.toThrow("temporary failure");
+    const result = await connector.listChanges();
+
+    expect(result.documents.map((document) => document.providerDocId)).toEqual(["target"]);
+    expect(filesGetMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("resolves the root alias for incremental scope matching", async () => {
+    changesListMock.mockResolvedValue({ data: { newStartPageToken: "fresh", changes: [
+      { fileId: "child", file: { id: "child", name: "Child", mimeType: "text/plain", parents: ["real-root"] } },
+    ] } });
+    filesGetMock.mockResolvedValue({ data: { id: "real-root" } });
+
+    const result = await createGDriveConnector({ auth, scope: { folder: "root" } })
+      .listChanges({ pageToken: "start" });
+
+    expect(result.documents.map((document) => document.providerDocId)).toEqual(["child"]);
+    expect(filesGetMock).toHaveBeenCalledWith({ fileId: "root", fields: "id", supportsAllDrives: true });
   });
 
   it("retries from the prior cursor when processing fails mid-page", async () => {
