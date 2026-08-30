@@ -1,0 +1,21 @@
+{
+  "name": "connector-sdk",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Open-source connectors that write normalized documents to your store",
+  "license": "MIT",
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "pnpm --recursive build",
+    "test": "vitest run",
+    "typecheck": "pnpm --recursive typecheck"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}
