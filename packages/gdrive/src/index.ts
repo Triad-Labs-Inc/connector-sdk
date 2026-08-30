@@ -65,7 +65,17 @@ function requireNonEmpty(value: unknown, field: string): asserts value is string
   }
 }
 
+function requireRecord(
+  value: unknown,
+  field: string,
+): asserts value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new ConnectorAuthError(`${field} must be an object`);
+  }
+}
+
 function createOAuth2Client(config: GDriveOAuthClientConfig) {
+  requireRecord(config, "config");
   requireNonEmpty(config.clientId, "clientId");
   requireNonEmpty(config.clientSecret, "clientSecret");
   requireNonEmpty(config.redirectUri, "redirectUri");
@@ -127,6 +137,7 @@ export async function exchangeAuthorizationCode(
 export function createDriveClient(
   credentials: GDriveCredentials,
 ): drive_v3.Drive {
+  requireRecord(credentials, "credentials");
   if (credentials.type === "service-account") {
     requireNonEmpty(credentials.keyJson, "keyJson");
 
@@ -160,6 +171,12 @@ export function createDriveClient(
       scopes: [DRIVE_READONLY_SCOPE],
     });
     return google.drive({ version: "v3", auth });
+  }
+
+  if (credentials.type !== "oauth") {
+    throw new ConnectorAuthError(
+      'credentials.type must be "service-account" or "oauth"',
+    );
   }
 
   requireNonEmpty(credentials.refreshToken, "refreshToken");

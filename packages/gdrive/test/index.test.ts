@@ -78,6 +78,15 @@ describe("createDriveClient", () => {
     ).toThrow(ConnectorAuthError);
   });
 
+  it.each([null, undefined, {}, { type: "unknown" }])(
+    "rejects an invalid credentials object: %j",
+    (credentials) => {
+      expect(() =>
+        createDriveClient(credentials as never),
+      ).toThrow(ConnectorAuthError);
+    },
+  );
+
   it.each(["null", "true", "[]", '"key"']) (
     "rejects non-object service-account JSON: %s",
     (keyJson) => {
@@ -151,6 +160,10 @@ describe("OAuth consent helpers", () => {
       prompt: "consent",
       scope: [DRIVE_READONLY_SCOPE],
     });
+  });
+
+  it("rejects a null OAuth client config", () => {
+    expect(() => getAuthorizationUrl(null as never)).toThrow(ConnectorAuthError);
   });
 
   it("returns refresh, access, and expiry tokens after code exchange", async () => {
