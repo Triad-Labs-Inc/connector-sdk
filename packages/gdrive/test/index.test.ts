@@ -434,6 +434,30 @@ describe("createGDriveConnector listChanges", () => {
     expect(filesGetMock).toHaveBeenCalledWith(expect.objectContaining({ fileId: "target-file", supportsAllDrives: true }));
   });
 
+  it("uses shortcut targetMimeType to walk folders without fetching metadata", async () => {
+    filesListMock.mockImplementation(async ({ q }: { q: string }) => ({ data: {
+      files: q.includes("'root'")
+        ? [{
+            id: "shortcut",
+            mimeType: "application/vnd.google-apps.shortcut",
+            shortcutDetails: {
+              targetId: "target-folder",
+              targetMimeType: "application/vnd.google-apps.folder",
+            },
+          }]
+        : [{ id: "nested", name: "Nested", mimeType: "text/plain" }],
+    } }));
+
+    const result = await createGDriveConnector({ auth, scope: { folder: "root" } })
+      .listChanges();
+
+    expect(result.documents.map((document) => document.providerDocId)).toEqual(["nested"]);
+    expect(filesGetMock).not.toHaveBeenCalled();
+    expect(filesListMock).toHaveBeenCalledWith(expect.objectContaining({
+      q: "'target-folder' in parents and trashed = false",
+    }));
+  });
+
   it("lists all visible files without recursively walking folders in all-files mode", async () => {
     filesListMock.mockResolvedValue({ data: { files: [
       { id: "folder", name: "Folder", mimeType: "application/vnd.google-apps.folder" },
