@@ -458,6 +458,34 @@ describe("createGDriveConnector listChanges", () => {
     }));
   });
 
+  it("records customer-visible shortcut resolution skip reasons", async () => {
+    filesListMock.mockResolvedValue({ data: { files: [
+      { id: "missing", name: "Missing", mimeType: "application/vnd.google-apps.shortcut" },
+      { id: "cycle-entry", name: "Cycle", mimeType: "application/vnd.google-apps.shortcut", shortcutDetails: { targetId: "cycle-target" } },
+      { id: "unreadable", name: "Unreadable", mimeType: "application/vnd.google-apps.shortcut", shortcutDetails: { targetId: "denied" } },
+      { id: "trashed-entry", name: "Trashed", mimeType: "application/vnd.google-apps.shortcut", shortcutDetails: { targetId: "trashed-target" } },
+    ] } });
+    filesGetMock.mockImplementation(async ({ fileId }: { fileId: string }) => {
+      if (fileId === "denied") throw new Error("403");
+      if (fileId === "trashed-target") return { data: { id: fileId, trashed: true, mimeType: "text/plain" } };
+      return { data: {
+        id: fileId,
+        mimeType: "application/vnd.google-apps.shortcut",
+        shortcutDetails: { targetId: fileId },
+      } };
+    });
+
+    const result = await createGDriveConnector({ auth, scope: { folder: "root" } })
+      .listChanges();
+
+    expect(result.skipped).toEqual([
+      { id: "missing", name: "Missing", reason: "shortcut_missing_target" },
+      { id: "cycle-target", reason: "shortcut_cycle_detected" },
+      { id: "unreadable", name: "Unreadable", reason: "shortcut_target_unreadable" },
+      { id: "trashed-entry", name: "Trashed", reason: "shortcut_target_trashed" },
+    ]);
+  });
+
   it("lists all visible files without recursively walking folders in all-files mode", async () => {
     filesListMock.mockResolvedValue({ data: { files: [
       { id: "folder", name: "Folder", mimeType: "application/vnd.google-apps.folder" },
@@ -572,7 +600,10 @@ describe("createGDriveConnector listChanges", () => {
       .mockResolvedValueOnce({ data: { id: "target", name: "Target", mimeType: "text/plain" } });
     const connector = createGDriveConnector({ auth, scope: { folder: "folder" } });
 
-    await expect(connector.listChanges()).rejects.toThrow("temporary failure");
+    const failed = await connector.listChanges();
+    expect(failed.skipped).toEqual([
+      { id: "shortcut", reason: "shortcut_target_unreadable" },
+    ]);
     const result = await connector.listChanges();
 
     expect(result.documents.map((document) => document.providerDocId)).toEqual(["target"]);

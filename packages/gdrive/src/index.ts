@@ -230,10 +230,23 @@ export interface GDriveSyncCursor {
   pageToken: string;
 }
 
+export type SkippedReason =
+  | "shortcut_missing_target"
+  | "shortcut_cycle_detected"
+  | "shortcut_target_unreadable"
+  | "shortcut_target_trashed";
+
+export interface SkippedEntry {
+  id: string;
+  name?: string;
+  reason: SkippedReason;
+}
+
 /** Result of a backfill or incremental sync page. */
 export interface GDriveSyncResult {
   documents: ConnectorDocument[];
   removed: string[];
+  skipped: SkippedEntry[];
   cursor: GDriveSyncCursor;
   /** Shortcut target IDs discovered during backfill, for persistence by consumers. */
   visitedTargets?: string[];
@@ -386,6 +399,7 @@ export function createGDriveConnector(
       throw new Error("Google Drive returned no start page token");
     }
     const documents: ConnectorDocument[] = [];
+    const skipped: SkippedEntry[] = [];
     const visitedFolders = new Set<string>();
     const visitedFiles = new Set<string>();
     const resolvingTargets = new Set<string>();
@@ -397,7 +411,18 @@ export function createGDriveConnector(
       if (!file.id || file.trashed) return;
       if (file.mimeType === SHORTCUT_MIME) {
         const targetId = file.shortcutDetails?.targetId;
-        if (!targetId || knownTargets.has(targetId) || resolvingTargets.has(targetId)) return;
+        const recordSkip = (reason: SkippedReason): void => {
+          skipped.push({ id: file.id as string, ...(file.name ? { name: file.name } : {}), reason });
+        };
+        if (!targetId) {
+          recordSkip("shortcut_missing_target");
+          return;
+        }
+        if (resolvingTargets.has(targetId)) {
+          recordSkip("shortcut_cycle_detected");
+          return;
+        }
+        if (knownTargets.has(targetId)) return;
         resolvingTargets.add(targetId);
         try {
           if (file.shortcutDetails?.targetMimeType === FOLDER_MIME) {
@@ -405,11 +430,21 @@ export function createGDriveConnector(
             knownTargets.add(targetId);
             return;
           }
-          const target = await drive.files.get({
-            fileId: targetId,
-            fields: FILE_FIELDS,
-            supportsAllDrives: true,
-          });
+          let target;
+          try {
+            target = await drive.files.get({
+              fileId: targetId,
+              fields: FILE_FIELDS,
+              supportsAllDrives: true,
+            });
+          } catch {
+            recordSkip("shortcut_target_unreadable");
+            return;
+          }
+          if (target.data.trashed) {
+            recordSkip("shortcut_target_trashed");
+            return;
+          }
           await visit(target.data, traverseFolders);
           knownTargets.add(targetId);
         } finally {
@@ -466,6 +501,7 @@ export function createGDriveConnector(
     return {
       documents,
       removed: [],
+      skipped,
       cursor: { pageToken: start.data.startPageToken },
       visitedTargets: [...knownTargets],
     };
@@ -476,6 +512,7 @@ export function createGDriveConnector(
     requireNonEmpty(cursor.pageToken, "cursor.pageToken");
     const documents: ConnectorDocument[] = [];
     const removed: string[] = [];
+    const skipped: SkippedEntry[] = [];
     const visitedFiles = new Set<string>();
     const scopeCache = new Map<string, boolean>();
     if (folderId) scopeCache.set(folderId, true);
@@ -521,7 +558,17 @@ export function createGDriveConnector(
       if (!file.id || file.trashed) return;
       if (file.mimeType === SHORTCUT_MIME) {
         const targetId = file.shortcutDetails?.targetId;
-        if (!targetId || resolvingTargets.has(targetId)) return;
+        const recordSkip = (reason: SkippedReason): void => {
+          skipped.push({ id: file.id as string, ...(file.name ? { name: file.name } : {}), reason });
+        };
+        if (!targetId) {
+          recordSkip("shortcut_missing_target");
+          return;
+        }
+        if (resolvingTargets.has(targetId)) {
+          recordSkip("shortcut_cycle_detected");
+          return;
+        }
         resolvingTargets.add(targetId);
         try {
           if (file.shortcutDetails?.targetMimeType === FOLDER_MIME) {
@@ -529,11 +576,21 @@ export function createGDriveConnector(
             scopeCache.set(targetId, true);
             return;
           }
-          const target = await drive.files.get({
-            fileId: targetId,
-            fields: FILE_FIELDS,
-            supportsAllDrives: true,
-          });
+          let target;
+          try {
+            target = await drive.files.get({
+              fileId: targetId,
+              fields: FILE_FIELDS,
+              supportsAllDrives: true,
+            });
+          } catch {
+            recordSkip("shortcut_target_unreadable");
+            return;
+          }
+          if (target.data.trashed) {
+            recordSkip("shortcut_target_trashed");
+            return;
+          }
           await emit(target.data);
           knownTargets.add(targetId);
           scopeCache.set(targetId, true);
@@ -571,7 +628,7 @@ export function createGDriveConnector(
       if (!page.data.nextPageToken) break;
       requestToken = page.data.nextPageToken;
     }
-    return { documents, removed, cursor: { pageToken: durableToken } };
+    return { documents, removed, skipped, cursor: { pageToken: durableToken } };
   }
 
   return {
