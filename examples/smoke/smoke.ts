@@ -16,9 +16,13 @@ import { readFileSync } from "node:fs";
  *   GOOGLE_SERVICE_ACCOUNT_KEY=../../service-account.json pnpm smoke
  */
 
-const keyPath = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+const keyPath =
+  process.env.GOOGLE_SERVICE_ACCOUNT_KEY ?? process.env.GOOGLE_SERVICE_ACCOUNT;
 if (!keyPath) {
-  console.error("Set GOOGLE_SERVICE_ACCOUNT_KEY to the JSON key file path.");
+  console.error(
+    "Set GOOGLE_SERVICE_ACCOUNT_KEY to the JSON key file path.\n" +
+      "Example: GOOGLE_SERVICE_ACCOUNT_KEY=./service-account.json pnpm smoke",
+  );
   process.exit(1);
 }
 
