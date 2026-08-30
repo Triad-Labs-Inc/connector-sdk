@@ -238,7 +238,8 @@ try {
         "project, wait a minute, then retry.",
     );
   } else {
-    console.error("Could not list folders:", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    console.error(`Could not list folders: ${message}`);
   }
   process.exit(1);
 }
