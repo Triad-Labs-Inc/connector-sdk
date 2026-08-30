@@ -136,6 +136,7 @@ if (reset) removeCursor();
 if (allFiles) {
   console.warn("scanning ALL content visible to this credential");
 }
+const saved = readCursor();
 
 const auth: GDriveCredentials = {
   type: "oauth",
@@ -146,6 +147,7 @@ const auth: GDriveCredentials = {
 const connector = createGDriveConnector({
   auth,
   scope: allFiles ? { allFiles: true } : { folder: folder as string },
+  knownTargets: saved?.visitedTargets,
 });
 
 async function backfill(): Promise<void> {
@@ -166,7 +168,6 @@ async function backfill(): Promise<void> {
 }
 
 async function run(): Promise<void> {
-  const saved = readCursor();
   if (!saved) {
     await backfill();
     return;
