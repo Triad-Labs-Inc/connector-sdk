@@ -349,6 +349,17 @@ describe("createGDriveConnector listChanges", () => {
     expect(filesGetMock).toHaveBeenCalledWith(expect.objectContaining({ fileId: "target-file", supportsAllDrives: true }));
   });
 
+  it("lists all visible files without recursively walking folders in all-files mode", async () => {
+    filesListMock.mockResolvedValue({ data: { files: [
+      { id: "folder", name: "Folder", mimeType: "application/vnd.google-apps.folder" },
+      { id: "file", name: "File", mimeType: "text/plain" },
+    ] } });
+    const result = await createGDriveConnector({ auth, scope: { allFiles: true } }).listChanges();
+    expect(result.documents.map((d) => d.providerDocId)).toEqual(["file"]);
+    expect(filesListMock).toHaveBeenCalledTimes(1);
+    expect(filesListMock).toHaveBeenCalledWith(expect.objectContaining({ q: "trashed = false" }));
+  });
+
   it("processes multiple change pages, removals, trash, and deep in-scope files", async () => {
     changesListMock
       .mockResolvedValueOnce({ data: { nextPageToken: "p2", changes: [

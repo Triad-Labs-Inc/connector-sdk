@@ -311,7 +311,10 @@ export function createGDriveConnector(
     const visitedFolders = new Set<string>();
     const visitedFiles = new Set<string>();
 
-    const visit = async (file: drive_v3.Schema$File): Promise<void> => {
+    const visit = async (
+      file: drive_v3.Schema$File,
+      traverseFolders = true,
+    ): Promise<void> => {
       if (!file.id || file.trashed) return;
       if (file.mimeType === SHORTCUT_MIME) {
         const targetId = file.shortcutDetails?.targetId;
@@ -322,11 +325,11 @@ export function createGDriveConnector(
           fields: FILE_FIELDS,
           supportsAllDrives: true,
         });
-        await visit(target.data);
+        await visit(target.data, traverseFolders);
         return;
       }
       if (file.mimeType === FOLDER_MIME) {
-        await walkFolder(file.id);
+        if (traverseFolders) await walkFolder(file.id);
         return;
       }
       if (visitedFiles.has(file.id)) return;
@@ -366,7 +369,7 @@ export function createGDriveConnector(
           supportsAllDrives: true,
           includeItemsFromAllDrives: true,
         });
-        for (const file of page.data.files ?? []) await visit(file);
+        for (const file of page.data.files ?? []) await visit(file, false);
         pageToken = page.data.nextPageToken ?? undefined;
       } while (pageToken);
     }
