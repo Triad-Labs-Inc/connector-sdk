@@ -56,6 +56,11 @@ export class ConnectorAuthError extends Error {
   override readonly name = "ConnectorAuthError";
 }
 
+/** Google Drive scope configuration is invalid. */
+export class ConnectorScopeError extends Error {
+  override readonly name = "ConnectorScopeError";
+}
+
 interface ServiceAccountKey {
   client_email?: unknown;
   private_key?: unknown;
@@ -220,5 +225,36 @@ export interface GDriveSyncCursor {
 /** Result of a backfill or incremental sync page. */
 export interface GDriveSyncResult {
   documents: ConnectorDocument[];
+  removed: string[];
   cursor: GDriveSyncCursor;
+  /** Shortcut target IDs discovered during backfill, for persistence by consumers. */
+  visitedTargets?: string[];
+}
+
+const DRIVE_FOLDER_ID = /^[A-Za-z0-9_-]+$/;
+
+/** Parses a bare Drive folder ID or a standard Drive folder URL. */
+export function parseGDriveFolderId(folder: string): string {
+  if (typeof folder !== "string" || folder.trim() === "") {
+    throw new ConnectorScopeError("scope.folder must be a Drive folder ID or URL");
+  }
+  const value = folder.trim();
+  let id = value;
+  if (value.startsWith("https://")) {
+    let url: URL;
+    try {
+      url = new URL(value);
+    } catch {
+      throw new ConnectorScopeError("scope.folder must be a valid Drive folder URL");
+    }
+    const match = url.pathname.match(/^\/drive\/folders\/([^/]+)\/?$/);
+    if (url.hostname !== "drive.google.com" || !match) {
+      throw new ConnectorScopeError("scope.folder must be a Drive folder URL");
+    }
+    id = match[1] ?? "";
+  }
+  if (!DRIVE_FOLDER_ID.test(id)) {
+    throw new ConnectorScopeError("scope.folder contains an invalid Drive folder ID");
+  }
+  return id;
 }
