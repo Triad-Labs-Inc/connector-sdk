@@ -270,7 +270,7 @@ export function parseGDriveFolderId(folder: string): string {
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 const SHORTCUT_MIME = "application/vnd.google-apps.shortcut";
 const FILE_FIELDS =
-  "id,name,mimeType,webViewLink,modifiedTime,parents,trashed,shortcutDetails(targetId)";
+  "id,name,mimeType,webViewLink,modifiedTime,parents,trashed,shortcutDetails(targetId,targetMimeType)";
 
 function toDocument(file: drive_v3.Schema$File): ConnectorDocument | undefined {
   if (!file.id || !file.name || !file.mimeType) return undefined;
@@ -400,6 +400,11 @@ export function createGDriveConnector(
         if (!targetId || knownTargets.has(targetId) || resolvingTargets.has(targetId)) return;
         resolvingTargets.add(targetId);
         try {
+          if (file.shortcutDetails?.targetMimeType === FOLDER_MIME) {
+            await visit({ id: targetId, mimeType: FOLDER_MIME }, traverseFolders);
+            knownTargets.add(targetId);
+            return;
+          }
           const target = await drive.files.get({
             fileId: targetId,
             fields: FILE_FIELDS,
@@ -519,6 +524,11 @@ export function createGDriveConnector(
         if (!targetId || resolvingTargets.has(targetId)) return;
         resolvingTargets.add(targetId);
         try {
+          if (file.shortcutDetails?.targetMimeType === FOLDER_MIME) {
+            knownTargets.add(targetId);
+            scopeCache.set(targetId, true);
+            return;
+          }
           const target = await drive.files.get({
             fileId: targetId,
             fields: FILE_FIELDS,
