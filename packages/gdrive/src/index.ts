@@ -40,6 +40,8 @@ export interface GDriveOAuthClientConfig {
   clientId: string;
   clientSecret: string;
   redirectUri: string;
+  /** Opaque value returned by Google for request/callback correlation. */
+  state?: string;
 }
 
 export type GDriveCredentials =
@@ -93,10 +95,13 @@ function createOAuth2Client(config: GDriveOAuthClientConfig) {
  * may otherwise omit the refresh token without reporting an error.
  */
 export function getAuthorizationUrl(config: GDriveOAuthClientConfig): string {
+  requireRecord(config, "config");
+  if (config.state !== undefined) requireNonEmpty(config.state, "state");
   return createOAuth2Client(config).generateAuthUrl({
     access_type: "offline",
     prompt: "consent",
     scope: [DRIVE_READONLY_SCOPE],
+    ...(config.state ? { state: config.state } : {}),
   });
 }
 

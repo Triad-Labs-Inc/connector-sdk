@@ -166,6 +166,33 @@ describe("OAuth consent helpers", () => {
     expect(() => getAuthorizationUrl(null as never)).toThrow(ConnectorAuthError);
   });
 
+  it("includes an OAuth state value for callback correlation", () => {
+    getAuthorizationUrl({
+      clientId: "client-id",
+      clientSecret: "client-secret",
+      redirectUri: "http://localhost:3000/oauth2callback",
+      state: "random-state",
+    });
+
+    expect(generateAuthUrlMock).toHaveBeenCalledWith({
+      access_type: "offline",
+      prompt: "consent",
+      scope: [DRIVE_READONLY_SCOPE],
+      state: "random-state",
+    });
+  });
+
+  it("rejects an empty OAuth state value", () => {
+    expect(() =>
+      getAuthorizationUrl({
+        clientId: "client-id",
+        clientSecret: "client-secret",
+        redirectUri: "http://localhost:3000/oauth2callback",
+        state: " ",
+      }),
+    ).toThrow(ConnectorAuthError);
+  });
+
   it("returns refresh, access, and expiry tokens after code exchange", async () => {
     getTokenMock.mockResolvedValue({
       tokens: {
