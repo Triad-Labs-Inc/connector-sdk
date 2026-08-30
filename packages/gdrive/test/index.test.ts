@@ -221,4 +221,15 @@ describe("OAuth consent helpers", () => {
       }),
     ).rejects.toThrow(ConnectorAuthError);
   });
+
+  it.each([[null], [undefined], [["code"]], ["config"]])(
+    "rejects a non-object config before reading fields: %s",
+    async (config) => {
+      await expect(
+        exchangeAuthorizationCode(
+          config as unknown as Parameters<typeof exchangeAuthorizationCode>[0],
+        ),
+      ).rejects.toThrow(ConnectorAuthError);
+    },
+  );
 });

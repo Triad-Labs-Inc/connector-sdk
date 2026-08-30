@@ -108,6 +108,7 @@ export async function exchangeAuthorizationCode(
   accessToken?: string;
   expiryDate?: number;
 }> {
+  requireRecord(config, "config");
   requireNonEmpty(config.code, "code");
   const auth = createOAuth2Client(config);
   const { tokens } = await auth.getToken(config.code);
