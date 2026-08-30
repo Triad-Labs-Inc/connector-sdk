@@ -399,13 +399,19 @@ describe("createGDriveConnector listChanges", () => {
     expect(result.documents[0]?.providerDocId).toBe("target");
   });
 
-  it("does not advance beyond the prior cursor when processing a page fails", async () => {
-    changesListMock.mockResolvedValue({ data: { nextPageToken: "p2", changes: [{ fileId: "deep", file: { id: "deep", name: "Deep", mimeType: "text/plain", parents: ["parent"] } }] } });
-    filesGetMock.mockRejectedValue(new Error("network failure"));
-    const connector = createGDriveConnector({ auth, scope: { allFiles: true } });
-    // allFiles does not resolve parents, so make document conversion itself harmless and fail the next page.
-    changesListMock.mockResolvedValueOnce({ data: { nextPageToken: "p2", changes: [] } }).mockRejectedValueOnce(new Error("network failure"));
-    await expect(connector.listChanges({ pageToken: "old" })).rejects.toThrow("network failure");
+  it("retries from the prior cursor when processing fails mid-page", async () => {
+    const badChange = { fileId: "bad" } as { fileId: string; file?: unknown };
+    Object.defineProperty(badChange, "file", {
+      get: () => { throw new Error("decode failure"); },
+    });
+    changesListMock.mockResolvedValue({ data: { newStartPageToken: "fresh", changes: [
+      { fileId: "good", file: { id: "good", name: "Good", mimeType: "text/plain", parents: ["root"] } },
+      badChange,
+    ] } });
+    const connector = createGDriveConnector({ auth, scope: { folder: "root" } });
+    await expect(connector.listChanges({ pageToken: "old" })).rejects.toThrow("decode failure");
+    await expect(connector.listChanges({ pageToken: "old" })).rejects.toThrow("decode failure");
     expect(changesListMock).toHaveBeenNthCalledWith(1, expect.objectContaining({ pageToken: "old" }));
+    expect(changesListMock).toHaveBeenNthCalledWith(2, expect.objectContaining({ pageToken: "old" }));
   });
 });
