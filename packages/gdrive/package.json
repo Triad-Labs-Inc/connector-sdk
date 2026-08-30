@@ -22,5 +22,8 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "dependencies": {
+    "googleapis": "^176.0.0"
   }
 }

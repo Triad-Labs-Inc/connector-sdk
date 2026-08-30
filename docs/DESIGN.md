@@ -52,8 +52,7 @@ The first package is `@triadlabs/connectors-gdrive`.
 
 Two credential shapes are supported:
 
-- Service-account JSON, supplied as parsed credentials or an equivalent typed
-  value.
+- Service-account JSON, supplied as the raw JSON key file contents.
 - OAuth client credentials plus a refresh token.
 
 Both paths produce the same internal authenticated Drive client. Authentication
