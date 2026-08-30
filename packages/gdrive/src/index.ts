@@ -258,3 +258,196 @@ export function parseGDriveFolderId(folder: string): string {
   }
   return id;
 }
+
+const FOLDER_MIME = "application/vnd.google-apps.folder";
+const SHORTCUT_MIME = "application/vnd.google-apps.shortcut";
+const FILE_FIELDS =
+  "id,name,mimeType,webViewLink,modifiedTime,parents,trashed,shortcutDetails(targetId)";
+
+function toDocument(file: drive_v3.Schema$File): ConnectorDocument | undefined {
+  if (!file.id || !file.name || !file.mimeType) return undefined;
+  // Extraction is step 4; step 3 intentionally emits metadata-complete stubs.
+  return {
+    providerDocId: file.id,
+    name: file.name,
+    mimeType: file.mimeType,
+    ...(file.webViewLink
+      ? { webViewLink: file.webViewLink, url: file.webViewLink }
+      : {}),
+    modifiedAt: file.modifiedTime ?? "",
+    contentHash: "",
+    markdown: "",
+  };
+}
+
+/** A configured Google Drive sync connector. */
+export interface GDriveConnector {
+  listChanges(cursor?: GDriveSyncCursor): Promise<GDriveSyncResult>;
+}
+
+/** Creates a connector that performs backfill and cursor-based incremental sync. */
+export function createGDriveConnector(
+  options: GDriveConnectorOptions,
+): GDriveConnector {
+  requireRecord(options, "options");
+  requireRecord(options.scope, "scope");
+  const folderId = "folder" in options.scope
+    ? parseGDriveFolderId(options.scope.folder as string)
+    : undefined;
+  if (!folderId && options.scope.allFiles !== true) {
+    throw new ConnectorScopeError(
+      'scope must contain either "folder" or allFiles: true',
+    );
+  }
+  const drive = createDriveClient(options.auth);
+  const knownTargets = new Set<string>();
+
+  async function backfill(): Promise<GDriveSyncResult> {
+    const start = await drive.changes.getStartPageToken({ supportsAllDrives: true });
+    if (!start.data.startPageToken) {
+      throw new Error("Google Drive returned no start page token");
+    }
+    const documents: ConnectorDocument[] = [];
+    const visitedFolders = new Set<string>();
+    const visitedFiles = new Set<string>();
+
+    const visit = async (file: drive_v3.Schema$File): Promise<void> => {
+      if (!file.id || file.trashed) return;
+      if (file.mimeType === SHORTCUT_MIME) {
+        const targetId = file.shortcutDetails?.targetId;
+        if (!targetId || knownTargets.has(targetId)) return;
+        knownTargets.add(targetId);
+        const target = await drive.files.get({
+          fileId: targetId,
+          fields: FILE_FIELDS,
+          supportsAllDrives: true,
+        });
+        await visit(target.data);
+        return;
+      }
+      if (file.mimeType === FOLDER_MIME) {
+        await walkFolder(file.id);
+        return;
+      }
+      if (visitedFiles.has(file.id)) return;
+      visitedFiles.add(file.id);
+      const document = toDocument(file);
+      if (document) documents.push(document);
+    };
+
+    const walkFolder = async (id: string): Promise<void> => {
+      if (visitedFolders.has(id)) return;
+      visitedFolders.add(id);
+      let pageToken: string | undefined;
+      do {
+        const page = await drive.files.list({
+          q: `'${id}' in parents and trashed = false`,
+          fields: `nextPageToken,files(${FILE_FIELDS})`,
+          pageSize: 1000,
+          pageToken,
+          supportsAllDrives: true,
+          includeItemsFromAllDrives: true,
+        });
+        for (const file of page.data.files ?? []) await visit(file);
+        pageToken = page.data.nextPageToken ?? undefined;
+      } while (pageToken);
+    };
+
+    if (folderId) {
+      await walkFolder(folderId);
+    } else {
+      let pageToken: string | undefined;
+      do {
+        const page = await drive.files.list({
+          q: "trashed = false",
+          fields: `nextPageToken,files(${FILE_FIELDS})`,
+          pageSize: 1000,
+          pageToken,
+          supportsAllDrives: true,
+          includeItemsFromAllDrives: true,
+        });
+        for (const file of page.data.files ?? []) await visit(file);
+        pageToken = page.data.nextPageToken ?? undefined;
+      } while (pageToken);
+    }
+
+    return {
+      documents,
+      removed: [],
+      cursor: { pageToken: start.data.startPageToken },
+      visitedTargets: [...knownTargets],
+    };
+  }
+
+  async function incremental(cursor: GDriveSyncCursor): Promise<GDriveSyncResult> {
+    requireNonEmpty(cursor.pageToken, "cursor.pageToken");
+    const documents: ConnectorDocument[] = [];
+    const removed: string[] = [];
+    const scopeCache = new Map<string, boolean>();
+    if (folderId) scopeCache.set(folderId, true);
+    let requestToken = cursor.pageToken;
+    let durableToken = cursor.pageToken;
+
+    const inScope = async (file: drive_v3.Schema$File): Promise<boolean> => {
+      if (!folderId || (file.id && knownTargets.has(file.id))) return true;
+      const path: string[] = [];
+      const active = new Set<string>();
+      let parents = file.parents ?? [];
+      while (parents.length) {
+        let nextParents: string[] = [];
+        for (const parentId of parents) {
+          const cached = scopeCache.get(parentId);
+          if (cached !== undefined) {
+            for (const id of path) scopeCache.set(id, cached);
+            return cached;
+          }
+          if (active.has(parentId)) continue;
+          active.add(parentId);
+          path.push(parentId);
+          try {
+            const parent = await drive.files.get({
+              fileId: parentId,
+              fields: "id,parents",
+              supportsAllDrives: true,
+            });
+            nextParents.push(...(parent.data.parents ?? []));
+          } catch {
+            scopeCache.set(parentId, false);
+          }
+        }
+        parents = nextParents;
+      }
+      for (const id of path) scopeCache.set(id, false);
+      return false;
+    };
+
+    for (;;) {
+      const page = await drive.changes.list({
+        pageToken: requestToken,
+        fields: `nextPageToken,newStartPageToken,changes(removed,fileId,file(${FILE_FIELDS}))`,
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+        pageSize: 1000,
+      });
+      for (const change of page.data.changes ?? []) {
+        const id = change.fileId ?? change.file?.id;
+        if (!id) continue;
+        if (change.removed || !change.file || change.file.trashed) {
+          removed.push(id);
+        } else if (await inScope(change.file)) {
+          const document = toDocument(change.file);
+          if (document) documents.push(document);
+        }
+      }
+      // This page is fully processed; only now may its successor become durable.
+      durableToken = page.data.nextPageToken ?? page.data.newStartPageToken ?? durableToken;
+      if (!page.data.nextPageToken) break;
+      requestToken = page.data.nextPageToken;
+    }
+    return { documents, removed, cursor: { pageToken: durableToken } };
+  }
+
+  return {
+    listChanges: (cursor) => (cursor ? incremental(cursor) : backfill()),
+  };
+}
