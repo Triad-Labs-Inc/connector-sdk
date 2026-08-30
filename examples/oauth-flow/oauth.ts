@@ -4,6 +4,7 @@ import {
   getAuthorizationUrl,
 } from "@triadlabs/connectors-gdrive";
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,6 +14,7 @@ const envPath = join(exampleDir, ".env.local");
 
 function parseLocalEnv(): Record<string, string> {
   if (!existsSync(envPath)) return {};
+  chmodSync(envPath, 0o600);
   return Object.fromEntries(
     readFileSync(envPath, "utf8")
       .split(/\r?\n/)
@@ -88,6 +90,7 @@ const redirectUri = `http://localhost:${parsedPort}/oauth2callback`;
 if (refreshToken) {
   console.log("Already authenticated, listing folders…");
 } else {
+  const expectedState = randomBytes(32).toString("base64url");
   refreshToken = await new Promise<string>((resolve, reject) => {
     let settled = false;
     let timeout: NodeJS.Timeout;
@@ -116,10 +119,18 @@ if (refreshToken) {
         return;
       }
 
+      if (url.searchParams.get("state") !== expectedState) {
+        response.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
+        response.end("Invalid OAuth state.");
+        finish(new Error("OAuth callback state did not match the request."));
+        return;
+      }
+
       const code = url.searchParams.get("code");
       if (!code) {
         response.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
         response.end("Missing authorization code.");
+        finish(new Error("OAuth callback did not include an authorization code."));
         return;
       }
 
@@ -170,6 +181,7 @@ if (refreshToken) {
         clientId,
         clientSecret,
         redirectUri,
+        state: expectedState,
       });
       console.log("\nOpen this link to connect Google Drive:\n");
       console.log(authorizationUrl);
@@ -227,7 +239,8 @@ try {
         "project, wait a minute, then retry.",
     );
   } else {
-    console.error("Could not list folders:", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    console.error(`Could not list folders: ${message}`);
   }
   process.exit(1);
 }

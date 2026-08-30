@@ -40,6 +40,8 @@ export interface GDriveOAuthClientConfig {
   clientId: string;
   clientSecret: string;
   redirectUri: string;
+  /** Opaque value returned by Google for request/callback correlation. */
+  state?: string;
 }
 
 export type GDriveCredentials =
@@ -59,13 +61,23 @@ interface ServiceAccountKey {
   private_key?: unknown;
 }
 
-function requireNonEmpty(value: string, field: string): void {
-  if (value.trim() === "") {
+function requireNonEmpty(value: unknown, field: string): asserts value is string {
+  if (typeof value !== "string" || value.trim() === "") {
     throw new ConnectorAuthError(`${field} must be a non-empty string`);
   }
 }
 
+function requireRecord(
+  value: unknown,
+  field: string,
+): asserts value is Record<string, unknown> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new ConnectorAuthError(`${field} must be an object`);
+  }
+}
+
 function createOAuth2Client(config: GDriveOAuthClientConfig) {
+  requireRecord(config, "config");
   requireNonEmpty(config.clientId, "clientId");
   requireNonEmpty(config.clientSecret, "clientSecret");
   requireNonEmpty(config.redirectUri, "redirectUri");
@@ -83,10 +95,13 @@ function createOAuth2Client(config: GDriveOAuthClientConfig) {
  * may otherwise omit the refresh token without reporting an error.
  */
 export function getAuthorizationUrl(config: GDriveOAuthClientConfig): string {
+  requireRecord(config, "config");
+  if (config.state !== undefined) requireNonEmpty(config.state, "state");
   return createOAuth2Client(config).generateAuthUrl({
     access_type: "offline",
     prompt: "consent",
     scope: [DRIVE_READONLY_SCOPE],
+    ...(config.state ? { state: config.state } : {}),
   });
 }
 
@@ -98,6 +113,7 @@ export async function exchangeAuthorizationCode(
   accessToken?: string;
   expiryDate?: number;
 }> {
+  requireRecord(config, "config");
   requireNonEmpty(config.code, "code");
   const auth = createOAuth2Client(config);
   const { tokens } = await auth.getToken(config.code);
@@ -127,6 +143,7 @@ export async function exchangeAuthorizationCode(
 export function createDriveClient(
   credentials: GDriveCredentials,
 ): drive_v3.Drive {
+  requireRecord(credentials, "credentials");
   if (credentials.type === "service-account") {
     requireNonEmpty(credentials.keyJson, "keyJson");
 
@@ -137,7 +154,13 @@ export function createDriveClient(
       throw new ConnectorAuthError("keyJson must contain valid JSON");
     }
 
-    if (typeof key.client_email !== "string" || key.client_email.trim() === "") {
+    if (
+      typeof key !== "object" ||
+      key === null ||
+      Array.isArray(key) ||
+      typeof key.client_email !== "string" ||
+      key.client_email.trim() === ""
+    ) {
       throw new ConnectorAuthError(
         "Service-account keyJson must include a non-empty client_email",
       );
@@ -154,6 +177,12 @@ export function createDriveClient(
       scopes: [DRIVE_READONLY_SCOPE],
     });
     return google.drive({ version: "v3", auth });
+  }
+
+  if (credentials.type !== "oauth") {
+    throw new ConnectorAuthError(
+      'credentials.type must be "service-account" or "oauth"',
+    );
   }
 
   requireNonEmpty(credentials.refreshToken, "refreshToken");

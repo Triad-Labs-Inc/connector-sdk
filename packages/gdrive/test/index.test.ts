@@ -78,6 +78,24 @@ describe("createDriveClient", () => {
     ).toThrow(ConnectorAuthError);
   });
 
+  it.each([null, undefined, {}, { type: "unknown" }])(
+    "rejects an invalid credentials object: %j",
+    (credentials) => {
+      expect(() =>
+        createDriveClient(credentials as never),
+      ).toThrow(ConnectorAuthError);
+    },
+  );
+
+  it.each(["null", "true", "[]", '"key"']) (
+    "rejects non-object service-account JSON: %s",
+    (keyJson) => {
+      expect(() =>
+        createDriveClient({ type: "service-account", keyJson }),
+      ).toThrow(ConnectorAuthError);
+    },
+  );
+
   it("rejects a service-account key without private_key", () => {
     const keyJson = JSON.stringify({
       client_email: "connector@example.iam.gserviceaccount.com",
@@ -144,6 +162,37 @@ describe("OAuth consent helpers", () => {
     });
   });
 
+  it("rejects a null OAuth client config", () => {
+    expect(() => getAuthorizationUrl(null as never)).toThrow(ConnectorAuthError);
+  });
+
+  it("includes an OAuth state value for callback correlation", () => {
+    getAuthorizationUrl({
+      clientId: "client-id",
+      clientSecret: "client-secret",
+      redirectUri: "http://localhost:3000/oauth2callback",
+      state: "random-state",
+    });
+
+    expect(generateAuthUrlMock).toHaveBeenCalledWith({
+      access_type: "offline",
+      prompt: "consent",
+      scope: [DRIVE_READONLY_SCOPE],
+      state: "random-state",
+    });
+  });
+
+  it("rejects an empty OAuth state value", () => {
+    expect(() =>
+      getAuthorizationUrl({
+        clientId: "client-id",
+        clientSecret: "client-secret",
+        redirectUri: "http://localhost:3000/oauth2callback",
+        state: " ",
+      }),
+    ).toThrow(ConnectorAuthError);
+  });
+
   it("returns refresh, access, and expiry tokens after code exchange", async () => {
     getTokenMock.mockResolvedValue({
       tokens: {
@@ -199,4 +248,15 @@ describe("OAuth consent helpers", () => {
       }),
     ).rejects.toThrow(ConnectorAuthError);
   });
+
+  it.each([[null], [undefined], [["code"]], ["config"]])(
+    "rejects a non-object config before reading fields: %s",
+    async (config) => {
+      await expect(
+        exchangeAuthorizationCode(
+          config as unknown as Parameters<typeof exchangeAuthorizationCode>[0],
+        ),
+      ).rejects.toThrow(ConnectorAuthError);
+    },
+  );
 });
