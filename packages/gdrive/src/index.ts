@@ -35,6 +35,13 @@ export interface GDriveOAuthRefreshTokenAuth {
   refreshToken: string;
 }
 
+/** Google OAuth application settings used during the consent flow. */
+export interface GDriveOAuthClientConfig {
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+}
+
 export type GDriveCredentials =
   | GDriveServiceAccountAuth
   | GDriveOAuthRefreshTokenAuth;
@@ -56,6 +63,59 @@ function requireNonEmpty(value: string, field: string): void {
   if (value.trim() === "") {
     throw new ConnectorAuthError(`${field} must be a non-empty string`);
   }
+}
+
+function createOAuth2Client(config: GDriveOAuthClientConfig) {
+  requireNonEmpty(config.clientId, "clientId");
+  requireNonEmpty(config.clientSecret, "clientSecret");
+  requireNonEmpty(config.redirectUri, "redirectUri");
+  return new google.auth.OAuth2(
+    config.clientId,
+    config.clientSecret,
+    config.redirectUri,
+  );
+}
+
+/**
+ * Builds a Google consent URL that requests a reusable refresh token.
+ *
+ * Both offline access and an explicit consent prompt are intentional: Google
+ * may otherwise omit the refresh token without reporting an error.
+ */
+export function getAuthorizationUrl(config: GDriveOAuthClientConfig): string {
+  return createOAuth2Client(config).generateAuthUrl({
+    access_type: "offline",
+    prompt: "consent",
+    scope: [DRIVE_READONLY_SCOPE],
+  });
+}
+
+/** Exchanges a Google authorization code for reusable OAuth credentials. */
+export async function exchangeAuthorizationCode(
+  config: GDriveOAuthClientConfig & { code: string },
+): Promise<{
+  refreshToken: string;
+  accessToken?: string;
+  expiryDate?: number;
+}> {
+  requireNonEmpty(config.code, "code");
+  const auth = createOAuth2Client(config);
+  const { tokens } = await auth.getToken(config.code);
+
+  if (!tokens.refresh_token) {
+    throw new ConnectorAuthError(
+      "Google returned no refresh_token. Generate the consent URL with " +
+        'access_type:"offline" and prompt:"consent", then authorize again.',
+    );
+  }
+
+  return {
+    refreshToken: tokens.refresh_token,
+    ...(tokens.access_token ? { accessToken: tokens.access_token } : {}),
+    ...(typeof tokens.expiry_date === "number"
+      ? { expiryDate: tokens.expiry_date }
+      : {}),
+  };
 }
 
 /**

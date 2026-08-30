@@ -2,6 +2,22 @@
 
 Standalone examples showing how to run connectors outside any backend.
 
+## `oauth-flow/`
+
+User-facing localhost OAuth flow: prints a Google consent link, catches the
+callback, saves the refresh token in a gitignored `.env.local`, and lists the
+authenticated user's visible Drive folders.
+
+```bash
+cd examples/oauth-flow
+pnpm install
+pnpm oauth
+```
+
+See [`oauth-flow/README.md`](oauth-flow/README.md) for the one-time Google Cloud
+setup. Every later run is just `pnpm oauth`, then click the link if authorization
+is needed.
+
 ## `smoke/`
 
 Tier-2 auth smoke test: proves a service-account credential actually works

@@ -57,8 +57,16 @@ Two credential shapes are supported:
 
 Both paths produce the same internal authenticated Drive client. Authentication
 is an adapter boundary; sync logic does not branch on the credential type. The
-package does not provide an OAuth consent UI, callback server, token database,
-or secret-management system. Consumers obtain credentials and pass them in.
+package provides primitives to generate the Google consent URL and exchange an
+authorization code, but it does not provide an OAuth UI, hosted callback server,
+token database, or secret-management system. The consumer hosts the callback
+and owns credential storage; `examples/oauth-flow` demonstrates this with a
+temporary localhost server.
+
+The URL helper always requests offline access and forces a fresh consent prompt.
+Google can silently omit the refresh token when either `access_type: "offline"`
+or `prompt: "consent"` is missing, so the helper makes that easy-to-miss protocol
+requirement part of the package boundary rather than every consumer's concern.
 
 ### Scope
 
