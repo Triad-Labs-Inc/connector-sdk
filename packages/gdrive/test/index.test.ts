@@ -632,29 +632,31 @@ describe("createGDriveConnector listChanges", () => {
     expect(result.documents.map((document) => document.providerDocId)).toEqual(["nested"]);
   });
 
-  it("re-walks known shortcut target folders before incremental changes", async () => {
+  it("re-walk emits only newly discovered files from known target folders", async () => {
+    filesGetMock.mockResolvedValue({ data: { id: "root" } });
     filesListMock.mockResolvedValue({ data: { files: [
+      { id: "existing-file", name: "Existing file", mimeType: "text/plain", parents: ["target-folder"] },
       { id: "new-file", name: "New file", mimeType: "text/plain", parents: ["target-folder"] },
     ] } });
     changesListMock.mockResolvedValue({ data: {
       newStartPageToken: "fresh",
-      changes: [{
-        fileId: "new-file",
-        file: { id: "new-file", name: "New file changed", mimeType: "text/plain", parents: ["target-folder"] },
-      }],
+      changes: [],
     } });
 
     const result = await createGDriveConnector({
       auth,
       scope: { folder: "root" },
-      knownTargets: { files: [], folders: ["target-folder"] },
+      knownTargets: { files: ["existing-file"], folders: ["target-folder"] },
     }).listChanges({ pageToken: "start" });
 
     expect(result.documents.map((document) => document.providerDocId)).toEqual(["new-file"]);
     expect(filesListMock).toHaveBeenCalledWith(expect.objectContaining({
       q: "'target-folder' in parents and trashed = false",
     }));
-    expect(result.visitedTargets).toEqual({ files: [], folders: ["target-folder"] });
+    expect(result.visitedTargets).toEqual({
+      files: ["existing-file", "new-file"],
+      folders: ["target-folder"],
+    });
   });
 
   it("skips incremental folders and resolves shortcuts using backfill MIME rules", async () => {

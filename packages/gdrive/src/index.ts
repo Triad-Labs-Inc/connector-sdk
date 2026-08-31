@@ -647,6 +647,12 @@ export function createGDriveConnector(
         if (traverseFolders) await walkTargetFolder(file.id);
         return;
       }
+      if (traverseFolders) {
+        const wasKnownTarget = knownTargetFiles.has(file.id);
+        knownTargetFiles.add(file.id);
+        scopeCache.set(file.id, true);
+        if (wasKnownTarget) return;
+      }
       if (visitedFiles.has(file.id)) return;
       visitedFiles.add(file.id);
       const document = toDocument(file);
@@ -671,6 +677,9 @@ export function createGDriveConnector(
       } while (pageToken);
     };
 
+    // Re-walk known target folders to refresh membership and discover files
+    // added since backfill. Previously known children stay silent; change-feed
+    // entries below remain the source of updates to those files.
     for (const targetFolderId of [...knownTargetFolders]) {
       await walkTargetFolder(targetFolderId);
     }
