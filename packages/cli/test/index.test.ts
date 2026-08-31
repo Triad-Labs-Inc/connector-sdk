@@ -31,8 +31,13 @@ afterEach(() => {
 
 describe("output filenames", () => {
   it("sanitizes path-hostile characters and unsafe dot names", () => {
-    expect(sanitizeFilename(' ../Q3: plan? <draft> \\ ')).toBe("..-Q3- plan- -draft- -");
+    expect(sanitizeFilename(' ../Q3: plan? <draft> \\ ')).toBe("-Q3- plan- -draft- -");
+    expect(sanitizeFilename("..secret plans")).toBe("secret plans");
+  });
+
+  it("uses a fallback when sanitization produces an empty filename", () => {
     expect(sanitizeFilename(".. ")).toBe("untitled");
+    expect(sanitizeFilename("...")).toBe("untitled");
   });
 
   it("adds a stable provider ID suffix for collisions", () => {
@@ -44,6 +49,11 @@ describe("output filenames", () => {
     );
     expect(first).toBe("Report-Q3.md");
     expect(second).toBe("Report-Q3-provider.md");
+
+    const dotted = allocateOutputPath("..Report/Q3", "provider-id-123", new Set([
+      first.toLowerCase(),
+    ]));
+    expect(dotted).toBe("Report-Q3-provider.md");
   });
 });
 
@@ -70,6 +80,41 @@ describe("manifest", () => {
 });
 
 describe("syncDump", () => {
+  it.each([
+    ["..secret plans", "secret plans.md"],
+    ["../escape", "-escape.md"],
+  ])("writes %s to a safe path inside the output directory", async (name, output) => {
+    const directory = temporaryDirectory();
+    const metadata: ConnectorDocument = {
+      providerDocId: "doc-1",
+      name,
+      mimeType: "text/plain",
+      modifiedAt: "2026-08-31T00:00:00.000Z",
+      contentHash: "",
+      markdown: "",
+    };
+    const connector: GDriveConnector = {
+      listChanges: vi.fn().mockResolvedValue({
+        documents: [metadata],
+        removed: [],
+        skipped: [],
+        cursor: { pageToken: "next" },
+        visitedTargets: { files: [], folders: [] },
+      }),
+      fetchContent: vi.fn().mockResolvedValue({
+        ...metadata,
+        markdown: "safe content",
+        contentHash: "safe-hash",
+      }),
+    };
+
+    const { manifest, summary } = await syncDump({ connector, outDir: directory });
+
+    expect(manifest.documents[0]?.output).toBe(output);
+    expect(summary.new).toBe(1);
+    expect(readFileSync(join(directory, output), "utf8")).toBe("safe content");
+  });
+
   it("uses a mocked connector and skips rewriting identical content", async () => {
     const directory = temporaryDirectory();
     const metadata: ConnectorDocument = {

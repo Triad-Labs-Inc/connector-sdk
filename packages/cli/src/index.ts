@@ -43,6 +43,7 @@ export function sanitizeFilename(name: string): string {
     .replace(/\s+/g, " ")
     .replace(/[. ]+$/g, "")
     .trim()
+    .replace(/^\.+/, "")
     .slice(0, 120);
   return sanitized === "" || sanitized === "." || sanitized === ".."
     ? "untitled"
