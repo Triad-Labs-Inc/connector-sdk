@@ -5,6 +5,7 @@ import {
   type GDriveSyncCursor,
   type VisitedTargets,
 } from "@triadlabs/connectors-gdrive";
+import { Buffer } from "node:buffer";
 import {
   chmodSync,
   existsSync,
@@ -70,11 +71,32 @@ function argumentValue(name: string): string | undefined {
 
 function printUsage(): void {
   console.error(`Usage:
-  pnpm sync --folder <id-or-url>
-  pnpm sync --folder <id-or-url> --reset
-  pnpm sync --all-files [--reset]
+  pnpm sync --folder <id-or-url> [--extract]
+  pnpm sync --folder <id-or-url> --reset [--extract]
+  pnpm sync --all-files [--reset] [--extract]
 
 FOLDER_ID or GOOGLE_FOLDER_ID may be used instead of --folder.`);
+}
+
+async function extractDocuments(documents: ConnectorDocument[]): Promise<void> {
+  if (!extract) return;
+  for (const document of documents) {
+    try {
+      const extracted = await connector.fetchContent(document);
+      const markdown = extracted.markdown ?? "";
+      const preview = markdown.replace(/\s+/g, " ").trim().slice(0, 200);
+      console.log(`\n${document.name}`);
+      console.log(`  mimeType: ${document.mimeType}`);
+      console.log(
+        `  markdown: ${markdown.length} chars, ${Buffer.byteLength(markdown, "utf8")} bytes`,
+      );
+      console.log(`  contentHash: ${extracted.contentHash?.slice(0, 12) ?? "-"}`);
+      console.log(`  preview: ${preview || "-"}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`\n${document.name}: extraction failed: ${message}`);
+    }
+  }
 }
 
 function printDocuments(documents: ConnectorDocument[]): void {
@@ -114,6 +136,7 @@ const refreshToken =
 
 const allFiles = process.argv.includes("--all-files");
 const reset = process.argv.includes("--reset");
+const extract = process.argv.includes("--extract");
 const folder =
   argumentValue("--folder") ??
   process.env.FOLDER_ID ??
@@ -159,6 +182,7 @@ async function backfill(): Promise<void> {
     `backfill complete: ${result.documents.length} documents, ${targetCount} shortcut targets`,
   );
   printDocuments(result.documents);
+  await extractDocuments(result.documents);
   persistCursor({
     cursor: result.cursor,
     visitedTargets,
@@ -180,6 +204,7 @@ async function run(): Promise<void> {
       `incremental: ${result.documents.length} changed, ${result.removed.length} removed`,
     );
     printDocuments(result.documents);
+    await extractDocuments(result.documents);
     if (result.removed.length > 0) {
       console.log("\nremoved IDs");
       for (const id of result.removed) console.log(`  ${id}`);

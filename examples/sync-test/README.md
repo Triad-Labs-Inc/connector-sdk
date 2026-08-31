@@ -26,6 +26,15 @@ The second run performs incremental sync and prints changed documents and
 removed file IDs. `FOLDER_ID` or `GOOGLE_FOLDER_ID` can supply the folder when
 `--folder` is omitted; the command-line value takes precedence.
 
+Add `--extract` to fetch content for every returned document and print its
+Markdown length, content hash, and a short preview. Extraction errors are
+reported per document without stopping the run or preventing cursor state from
+being saved:
+
+```bash
+pnpm sync --folder <id-or-url> --extract
+```
+
 Cursor state is stored in the gitignored `examples/sync-test/.cursor.json` with
 permissions `0600`. Use `--reset` to delete it and force a fresh backfill:
 
