@@ -609,9 +609,12 @@ export function createGDriveConnector(
         resolvingTargets.add(targetId);
         try {
           if (file.shortcutDetails?.targetMimeType === FOLDER_MIME) {
+            const isNewTargetFolder = !knownTargetFolders.has(targetId);
             knownTargetFolders.add(targetId);
             scopeCache.set(targetId, true);
-            if (traverseFolders) await walkTargetFolder(targetId);
+            if (traverseFolders || isNewTargetFolder) {
+              await walkTargetFolder(targetId);
+            }
             return;
           }
           let target;
@@ -629,7 +632,9 @@ export function createGDriveConnector(
             recordSkip("shortcut_target_trashed");
             return;
           }
-          await emit(target.data, traverseFolders);
+          const isNewTargetFolder = target.data.mimeType === FOLDER_MIME &&
+            !knownTargetFolders.has(targetId);
+          await emit(target.data, traverseFolders || isNewTargetFolder);
           if (target.data.mimeType === FOLDER_MIME) knownTargetFolders.add(targetId);
           else knownTargetFiles.add(targetId);
           scopeCache.set(targetId, true);

@@ -703,6 +703,34 @@ describe("createGDriveConnector listChanges", () => {
     expect(result.visitedTargets).toEqual({ files: ["new-target"], folders: [] });
   });
 
+  it("walks a newly discovered folder shortcut during the same incremental sync", async () => {
+    changesListMock.mockResolvedValue({ data: { newStartPageToken: "fresh", changes: [{
+      fileId: "shortcut",
+      file: {
+        id: "shortcut",
+        mimeType: "application/vnd.google-apps.shortcut",
+        parents: ["root"],
+        shortcutDetails: {
+          targetId: "new-folder",
+          targetMimeType: "application/vnd.google-apps.folder",
+        },
+      },
+    }] } });
+    filesGetMock.mockResolvedValue({ data: { id: "root" } });
+    filesListMock.mockResolvedValue({ data: { files: [
+      { id: "existing-child", name: "Existing child", mimeType: "text/plain" },
+    ] } });
+
+    const result = await createGDriveConnector({ auth, scope: { folder: "root" } })
+      .listChanges({ pageToken: "start" });
+
+    expect(result.documents.map((document) => document.providerDocId))
+      .toEqual(["existing-child"]);
+    expect(filesListMock).toHaveBeenCalledWith(expect.objectContaining({
+      q: "'new-folder' in parents and trashed = false",
+    }));
+  });
+
   it("retries a shortcut target after its fetch fails", async () => {
     filesListMock.mockResolvedValue({ data: { files: [
       { id: "shortcut", mimeType: "application/vnd.google-apps.shortcut", shortcutDetails: { targetId: "target" } },
