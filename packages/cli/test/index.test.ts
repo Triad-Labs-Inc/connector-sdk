@@ -2,7 +2,7 @@ import type {
   ConnectorDocument,
   GDriveConnector,
 } from "@triadlabs/connectors-gdrive";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -111,5 +111,58 @@ describe("syncDump", () => {
     expect(connector.fetchContent).toHaveBeenCalledWith(metadata);
     expect(summary).toEqual({ new: 0, updated: 0, unchanged: 1, removed: 0, errors: 0 });
     expect(() => readFileSync(join(directory, "Doc.md"), "utf8")).toThrow();
+  });
+
+  it("keeps shortcut documents when an expired cursor triggers backfill", async () => {
+    const directory = temporaryDirectory();
+    const metadata: ConnectorDocument = {
+      providerDocId: "shortcut-target",
+      name: "Shortcut target",
+      mimeType: "text/plain",
+      modifiedAt: "2026-08-31T00:00:00.000Z",
+      contentHash: "",
+      markdown: "",
+    };
+    writeFileSync(join(directory, "Shortcut target.md"), "same content", "utf8");
+    const connector: GDriveConnector = {
+      listChanges: vi.fn()
+        .mockRejectedValueOnce(Object.assign(new Error("expired"), { code: 410 }))
+        .mockResolvedValueOnce({
+          documents: [metadata],
+          removed: [],
+          skipped: [],
+          cursor: { pageToken: "fresh" },
+          visitedTargets: { files: ["shortcut-target"], folders: [] },
+        }),
+      fetchContent: vi.fn().mockResolvedValue({
+        ...metadata,
+        markdown: "same content",
+        contentHash: "same-hash",
+      }),
+    };
+    const previous: DumpManifest = {
+      documents: [{
+        ...metadata,
+        contentHash: "same-hash",
+        output: "Shortcut target.md",
+      }],
+      cursor: { pageToken: "expired" },
+      visitedTargets: { files: ["shortcut-target"], folders: [] },
+      savedAt: "2026-08-30T00:00:00.000Z",
+    };
+
+    const { manifest, summary } = await syncDump({
+      connector,
+      outDir: directory,
+      previous,
+    });
+
+    expect(connector.listChanges).toHaveBeenNthCalledWith(1, previous.cursor);
+    expect(connector.listChanges).toHaveBeenNthCalledWith(2);
+    expect(manifest.documents.map((document) => document.providerDocId))
+      .toEqual(["shortcut-target"]);
+    expect(summary.removed).toBe(0);
+    expect(readFileSync(join(directory, "Shortcut target.md"), "utf8"))
+      .toBe("same content");
   });
 });
