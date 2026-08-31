@@ -461,6 +461,35 @@ describe("createGDriveConnector listChanges", () => {
     }));
   });
 
+  it("resolves restored shortcut targets during a fresh backfill", async () => {
+    filesListMock.mockImplementation(async ({ q }: { q: string }) => ({ data: {
+      files: q.includes("'root'")
+        ? [{
+            id: "shortcut",
+            mimeType: "application/vnd.google-apps.shortcut",
+            shortcutDetails: { targetId: "target-file" },
+          }]
+        : [],
+    } }));
+    filesGetMock.mockResolvedValue({ data: {
+      id: "target-file",
+      name: "Restored target",
+      mimeType: "text/plain",
+    } });
+
+    const result = await createGDriveConnector({
+      auth,
+      scope: { folder: "root" },
+      knownTargets: { files: ["target-file"], folders: [] },
+    }).listChanges();
+
+    expect(result.documents.map((document) => document.providerDocId))
+      .toEqual(["target-file"]);
+    expect(filesGetMock).toHaveBeenCalledWith(expect.objectContaining({
+      fileId: "target-file",
+    }));
+  });
+
   it("records customer-visible shortcut resolution skip reasons", async () => {
     filesListMock.mockResolvedValue({ data: { files: [
       { id: "missing", name: "Missing", mimeType: "application/vnd.google-apps.shortcut" },

@@ -428,7 +428,6 @@ export function createGDriveConnector(
           recordSkip("shortcut_cycle_detected");
           return;
         }
-        if (knownTargetFiles.has(targetId) || knownTargetFolders.has(targetId)) return;
         resolvingTargets.add(targetId);
         try {
           if (file.shortcutDetails?.targetMimeType === FOLDER_MIME) {
