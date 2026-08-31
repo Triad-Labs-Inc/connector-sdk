@@ -220,10 +220,7 @@ export async function syncDump(options: SyncOptions): Promise<{
       a.providerDocId.localeCompare(b.providerDocId),
     ),
     cursor: result.cursor,
-    visitedTargets: result.visitedTargets ?? previous?.visitedTargets ?? {
-      files: [],
-      folders: [],
-    },
+    visitedTargets: result.visitedTargets,
     savedAt: (options.now ?? (() => new Date()))().toISOString(),
   };
   writeManifest(join(options.outDir, "manifest.json"), manifest);

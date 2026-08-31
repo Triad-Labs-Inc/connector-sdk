@@ -176,7 +176,7 @@ const connector = createGDriveConnector({
 
 async function backfill(): Promise<void> {
   const result = await connector.listChanges();
-  const visitedTargets = result.visitedTargets ?? { files: [], folders: [] };
+  const visitedTargets = result.visitedTargets;
   const targetCount = visitedTargets.files.length + visitedTargets.folders.length;
   console.log(
     `backfill complete: ${result.documents.length} documents, ${targetCount} shortcut targets`,
@@ -211,7 +211,7 @@ async function run(): Promise<void> {
     }
     persistCursor({
       cursor: result.cursor,
-      visitedTargets: result.visitedTargets ?? saved.visitedTargets,
+      visitedTargets: result.visitedTargets,
       savedAt: new Date().toISOString(),
     });
   } catch (error) {

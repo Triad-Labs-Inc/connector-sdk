@@ -254,7 +254,7 @@ export interface GDriveSyncResult {
   skipped: SkippedEntry[];
   cursor: GDriveSyncCursor;
   /** Shortcut targets discovered during sync, for persistence by consumers. */
-  visitedTargets?: VisitedTargets;
+  visitedTargets: VisitedTargets;
 }
 
 const DRIVE_FOLDER_ID = /^[A-Za-z0-9_-]+$/;
