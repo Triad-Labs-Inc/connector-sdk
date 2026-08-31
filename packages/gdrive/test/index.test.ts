@@ -634,7 +634,7 @@ describe("createGDriveConnector listChanges", () => {
 
   it("re-walk emits only newly discovered files from known target folders", async () => {
     filesGetMock.mockResolvedValue({ data: { id: "root" } });
-    filesListMock.mockResolvedValue({ data: { files: [
+    filesListMock.mockResolvedValueOnce({ data: { files: [
       { id: "existing-file", name: "Existing file", mimeType: "text/plain", parents: ["target-folder"] },
       { id: "new-file", name: "New file", mimeType: "text/plain", parents: ["target-folder"] },
     ] } });
@@ -719,7 +719,7 @@ describe("createGDriveConnector listChanges", () => {
       },
     }] } });
     filesGetMock.mockResolvedValue({ data: { id: "root" } });
-    filesListMock.mockResolvedValue({ data: { files: [
+    filesListMock.mockResolvedValueOnce({ data: { files: [
       { id: "existing-child", name: "Existing child", mimeType: "text/plain" },
     ] } });
 
