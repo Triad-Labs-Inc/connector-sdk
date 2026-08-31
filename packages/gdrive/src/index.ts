@@ -405,13 +405,16 @@ export function createGDriveConnector(
   }
 
   const getFolderId = (): Promise<string | undefined> => {
-    resolvedFolderId ??= configuredFolderId === "root"
+    resolvedFolderId ??= (configuredFolderId === "root"
       ? drive.files.get({
           fileId: "root",
           fields: "id",
           supportsAllDrives: true,
         }).then(({ data }) => data.id ?? "root")
-      : Promise.resolve(configuredFolderId);
+      : Promise.resolve(configuredFolderId)).catch((error: unknown) => {
+        resolvedFolderId = undefined;
+        throw error;
+      });
     return resolvedFolderId;
   };
 
