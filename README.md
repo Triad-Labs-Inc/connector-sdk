@@ -19,6 +19,8 @@ for the accepted architecture and planned scope.
 
 - `@triadlabs/connectors-gdrive` — Google Drive connector (interfaces and
   authentication helpers)
+- [`@triadlabs/connectors-cli`](packages/cli/README.md) — standalone Google
+  Drive-to-Markdown dump CLI
 
 ## Status
 
