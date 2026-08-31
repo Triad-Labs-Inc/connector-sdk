@@ -340,6 +340,36 @@ describe("createGDriveConnector fetchContent", () => {
     expect(result.contentHash).toMatch(/^[a-f0-9]{64}$/);
   });
 
+  it.each([
+    ["text/plain", "plain text"],
+    ["text/plain; charset=UTF-8", "plain text with charset"],
+  ])("downloads and decodes %s without a parser", async (mimeType, content) => {
+    filesGetMock.mockResolvedValue({ data: new TextEncoder().encode(content) });
+
+    const result = await createGDriveConnector({ auth, scope: { allFiles: true } })
+      .fetchContent(doc(mimeType));
+
+    expect(filesGetMock).toHaveBeenCalledWith(
+      { fileId: "file-id", alt: "media", supportsAllDrives: true },
+      { responseType: "arraybuffer" },
+    );
+    expect(result.markdown).toBe(content);
+    expect(result.contentHash).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it.each([
+    ["text/markdown", "# Markdown"],
+    ["text/markdown; charset=utf-8", "# Markdown with charset"],
+  ])("downloads and decodes %s without a parser", async (mimeType, content) => {
+    filesGetMock.mockResolvedValue({ data: new TextEncoder().encode(content) });
+
+    const result = await createGDriveConnector({ auth, scope: { allFiles: true } })
+      .fetchContent(doc(mimeType));
+
+    expect(result.markdown).toBe(content);
+    expect(result.contentHash).toMatch(/^[a-f0-9]{64}$/);
+  });
+
   it("downloads binary content and invokes the parser", async () => {
     const parser = vi.fn(async () => "# Parsed");
     filesGetMock.mockResolvedValue({ data: new Uint8Array([1, 2, 3]) });
@@ -703,6 +733,21 @@ describe("createGDriveConnector listChanges", () => {
 
     expect(result.documents.map((document) => document.providerDocId)).toEqual(["child"]);
     expect(filesGetMock).toHaveBeenCalledWith({ fileId: "root", fields: "id", supportsAllDrives: true });
+  });
+
+  it("retries root alias resolution after a transient failure", async () => {
+    changesListMock.mockResolvedValue({ data: { newStartPageToken: "fresh", changes: [] } });
+    filesGetMock
+      .mockRejectedValueOnce(new Error("temporary root lookup failure"))
+      .mockResolvedValueOnce({ data: { id: "real-root" } });
+    const connector = createGDriveConnector({ auth, scope: { folder: "root" } });
+
+    await expect(connector.listChanges({ pageToken: "start" }))
+      .rejects.toThrow("temporary root lookup failure");
+    await expect(connector.listChanges({ pageToken: "start" }))
+      .resolves.toMatchObject({ cursor: { pageToken: "fresh" } });
+
+    expect(filesGetMock).toHaveBeenCalledTimes(2);
   });
 
   it("retries from the prior cursor when processing fails mid-page", async () => {

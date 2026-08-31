@@ -345,6 +345,9 @@ export function createGDriveConnector(
       ["application/vnd.google-apps.spreadsheet", "text/csv"],
       ["application/vnd.google-apps.presentation", "text/plain"],
     ]).get(doc.mimeType);
+    const baseMimeType = doc.mimeType.split(";", 1)[0]?.trim().toLowerCase();
+    const isDirectText = baseMimeType === "text/plain" ||
+      baseMimeType === "text/markdown";
 
     let markdown: string;
     if (exportMimeType) {
@@ -359,6 +362,20 @@ export function createGDriveConnector(
       markdown = typeof response.data === "string"
         ? response.data
         : String(response.data);
+    } else if (isDirectText) {
+      const response = await drive.files.get(
+        {
+          fileId: doc.providerDocId,
+          alt: "media",
+          supportsAllDrives: true,
+        },
+        { responseType: "arraybuffer" },
+      );
+      const data = response.data as unknown;
+      const bytes = data instanceof Uint8Array
+        ? data
+        : new Uint8Array(data as ArrayBuffer);
+      markdown = new TextDecoder().decode(bytes);
     } else {
       if (!options.parser) {
         throw new ConnectorExtractionError(
