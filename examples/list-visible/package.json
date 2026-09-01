@@ -1,0 +1,17 @@
+{
+  "name": "@triadlabs/example-list-visible",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "list": "pnpm --filter @triadlabs/connectors-gdrive build && tsx list.ts"
+  },
+  "dependencies": {
+    "@triadlabs/connectors-gdrive": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.3"
+  }
+}
