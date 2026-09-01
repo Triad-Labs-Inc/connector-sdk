@@ -7,27 +7,33 @@ company data. A connector handles authentication, change detection, download,
 and normalization, then returns portable documents to the consumer. It does not
 host your data, choose your database, or make you query through a Triad service.
 
-The first connector targets Google Drive. The accepted design covers
-folder-scoped backfills, cursor-based incremental sync, native Google exports,
-and an injected parser for binary files. A standalone CLI is planned to write
-Markdown and a manifest to disk.
+The first connector targets Google Drive, with folder-scoped backfills,
+cursor-based incremental sync, native Google exports, and an injected parser
+for binary files. A standalone CLI writes Markdown and a manifest to disk.
 
 The repository is an early TypeScript monorepo. See [the design](docs/DESIGN.md)
 for the accepted architecture and planned scope.
 
 ## Packages
 
-- `@triadlabs/connectors-gdrive` — Google Drive connector (interfaces and
-  authentication helpers)
+- `@triadlabs/connectors-gdrive` — Google Drive connector (authentication,
+  backfill, incremental sync, extraction)
 - [`@triadlabs/connectors-cli`](packages/cli/README.md) — standalone Google
   Drive-to-Markdown dump CLI
 
 ## Status
 
-The repository structure, public interfaces, service-account and OAuth Drive
-client creation, OAuth consent helpers, and runnable authentication examples are
-implemented. Backfill, shortcut resolution, extraction, incremental sync, and
-the standalone CLI remain roadmap work described in the design document.
+The Google Drive connector implements the accepted design: service-account and
+OAuth authentication, recursive folder backfills, Drive shortcut resolution,
+cursor-based incremental sync, native Google exports, direct decoding of text
+formats, and an injected parser socket for binary files. The CLI writes one
+Markdown file per document plus a `manifest.json` with metadata, content
+hashes, and incremental cursor state; binary formats are recorded as errors in
+the manifest until a parser is configured.
+
+Packages are not yet published to npm — consumers install from git. Test
+coverage is mocked at the Drive API boundary; live end-to-end verification is
+tracked separately.
 
 ## License
 
