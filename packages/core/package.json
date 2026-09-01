@@ -1,7 +1,7 @@
 {
-  "name": "@triadlabs/connectors-gdrive",
+  "name": "@triadlabs/connectors-core",
   "version": "0.0.1",
-  "description": "Google Drive plumbing for consumer-owned document stores",
+  "description": "Shared contracts for Triad Labs connectors",
   "license": "MIT",
   "type": "module",
   "exports": {
@@ -22,9 +22,5 @@
   },
   "publishConfig": {
     "access": "public"
-  },
-  "dependencies": {
-    "@triadlabs/connectors-core": "workspace:*",
-    "googleapis": "^176.0.0"
   }
 }

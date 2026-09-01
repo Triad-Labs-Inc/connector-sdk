@@ -72,8 +72,13 @@ importers:
         specifier: workspace:*
         version: link:../gdrive
 
+  packages/core: {}
+
   packages/gdrive:
     dependencies:
+      '@triadlabs/connectors-core':
+        specifier: workspace:*
+        version: link:../core
       googleapis:
         specifier: ^176.0.0
         version: 176.0.0

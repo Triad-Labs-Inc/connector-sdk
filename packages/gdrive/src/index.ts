@@ -1,26 +1,24 @@
 import { drive_v3, google } from "googleapis";
 import { createHash } from "node:crypto";
+import {
+  ConnectorAuthError,
+  ConnectorExtractionError,
+  ConnectorScopeError,
+  type ConnectorDocument,
+  type ParserFn,
+} from "@triadlabs/connectors-core";
+
+export {
+  ConnectorAuthError,
+  ConnectorExtractionError,
+  ConnectorScopeError,
+  type Connector,
+  type ConnectorDocument,
+  type ParserFn,
+} from "@triadlabs/connectors-core";
 
 export const DRIVE_READONLY_SCOPE =
   "https://www.googleapis.com/auth/drive.readonly";
-
-/** A document extracted and normalized by a source connector. */
-export interface ConnectorDocument {
-  providerDocId: string;
-  name: string;
-  mimeType: string;
-  webViewLink?: string;
-  url?: string;
-  modifiedAt: string;
-  contentHash: string;
-  markdown: string;
-}
-
-/** Consumer-provided binary-to-Markdown parser socket. */
-export type ParserFn = (
-  bytes: Uint8Array,
-  mimeType: string,
-) => Promise<string>;
 
 /** Service-account JSON key contents supplied by the consumer. */
 export interface GDriveServiceAccountAuth {
@@ -51,21 +49,6 @@ export type GDriveCredentials =
 
 /** @deprecated Use GDriveCredentials. */
 export type GDriveAuth = GDriveCredentials;
-
-/** Authentication configuration is invalid or cannot be parsed. */
-export class ConnectorAuthError extends Error {
-  override readonly name = "ConnectorAuthError";
-}
-
-/** Google Drive scope configuration is invalid. */
-export class ConnectorScopeError extends Error {
-  override readonly name = "ConnectorScopeError";
-}
-
-/** A Drive item cannot be extracted through the configured connector. */
-export class ConnectorExtractionError extends Error {
-  override readonly name = "ConnectorExtractionError";
-}
 
 interface ServiceAccountKey {
   client_email?: unknown;
