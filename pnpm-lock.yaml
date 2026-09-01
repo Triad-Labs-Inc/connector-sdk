@@ -18,6 +18,22 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@22.20.1)(tsx@4.23.13)
 
+  examples/list-visible:
+    dependencies:
+      '@triadlabs/connectors-gdrive':
+        specifier: workspace:*
+        version: link:../../packages/gdrive
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.20.1
+      tsx:
+        specifier: ^4.19.0
+        version: 4.23.13
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+
   examples/oauth-flow:
     dependencies:
       '@triadlabs/connectors-gdrive':
@@ -50,8 +66,35 @@ importers:
         specifier: ^5.8.3
         version: 5.9.3
 
+  examples/sync-test:
+    dependencies:
+      '@triadlabs/connectors-gdrive':
+        specifier: workspace:*
+        version: link:../../packages/gdrive
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.20.1
+      tsx:
+        specifier: ^4.19.0
+        version: 4.23.13
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+
+  packages/cli:
+    dependencies:
+      '@triadlabs/connectors-gdrive':
+        specifier: workspace:*
+        version: link:../gdrive
+
+  packages/core: {}
+
   packages/gdrive:
     dependencies:
+      '@triadlabs/connectors-core':
+        specifier: workspace:*
+        version: link:../core
       googleapis:
         specifier: ^176.0.0
         version: 176.0.0

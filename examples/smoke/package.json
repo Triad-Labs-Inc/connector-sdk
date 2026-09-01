@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "smoke": "pnpm --filter @triadlabs/connectors-gdrive build && tsx smoke.ts"
+    "smoke": "pnpm --filter @triadlabs/connectors-gdrive... build && tsx smoke.ts"
   },
   "dependencies": {
     "@triadlabs/connectors-gdrive": "workspace:*"

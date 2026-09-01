@@ -1,224 +1,108 @@
-import { drive_v3, google } from "googleapis";
+import {
+  ConnectorScopeError,
+  type ParserFn,
+} from "@triadlabs/connectors-core";
+import { createDriveClient, requireRecord } from "./auth.js";
+import { createListChanges } from "./changes.js";
+import { createFetchContent } from "./extract.js";
+import type {
+  GDriveConnector,
+  GDriveConnectorOptions,
+} from "./types.js";
 
-export const DRIVE_READONLY_SCOPE =
-  "https://www.googleapis.com/auth/drive.readonly";
+export {
+  ConnectorAuthError,
+  ConnectorCursorExpiredError,
+  ConnectorExtractionError,
+  ConnectorScopeError,
+  type Connector,
+  type ConnectorDocument,
+  type ParserFn,
+} from "@triadlabs/connectors-core";
+export {
+  createDriveClient,
+  DRIVE_READONLY_SCOPE,
+  exchangeAuthorizationCode,
+  getAuthorizationUrl,
+  type GDriveAuth,
+  type GDriveCredentials,
+  type GDriveOAuthClientConfig,
+  type GDriveOAuthRefreshTokenAuth,
+  type GDriveServiceAccountAuth,
+} from "./auth.js";
+export type {
+  GDriveConnector,
+  GDriveConnectorOptions,
+  GDriveScope,
+  GDriveSyncCursor,
+  GDriveSyncResume,
+  GDriveSyncResult,
+  SkippedEntry,
+  SkippedReason,
+  VisitedTargets,
+} from "./types.js";
 
-/** A document extracted and normalized by a source connector. */
-export interface ConnectorDocument {
-  providerDocId: string;
-  name: string;
-  mimeType: string;
-  webViewLink?: string;
-  url?: string;
-  modifiedAt: string;
-  contentHash: string;
-  markdown: string;
-}
+const DRIVE_FOLDER_ID = /^[A-Za-z0-9_-]+$/;
 
-/** Consumer-provided binary-to-Markdown parser socket. */
-export type ParserFn = (
-  bytes: Uint8Array,
-  mimeType: string,
-) => Promise<string>;
-
-/** Service-account JSON key contents supplied by the consumer. */
-export interface GDriveServiceAccountAuth {
-  type: "service-account";
-  keyJson: string;
-}
-
-/** OAuth credentials supplied after the consumer completes its own OAuth UI. */
-export interface GDriveOAuthRefreshTokenAuth {
-  type: "oauth";
-  clientId: string;
-  clientSecret: string;
-  refreshToken: string;
-}
-
-/** Google OAuth application settings used during the consent flow. */
-export interface GDriveOAuthClientConfig {
-  clientId: string;
-  clientSecret: string;
-  redirectUri: string;
-  /** Opaque value returned by Google for request/callback correlation. */
-  state?: string;
-}
-
-export type GDriveCredentials =
-  | GDriveServiceAccountAuth
-  | GDriveOAuthRefreshTokenAuth;
-
-/** @deprecated Use GDriveCredentials. */
-export type GDriveAuth = GDriveCredentials;
-
-/** Authentication configuration is invalid or cannot be parsed. */
-export class ConnectorAuthError extends Error {
-  override readonly name = "ConnectorAuthError";
-}
-
-interface ServiceAccountKey {
-  client_email?: unknown;
-  private_key?: unknown;
-}
-
-function requireNonEmpty(value: unknown, field: string): asserts value is string {
-  if (typeof value !== "string" || value.trim() === "") {
-    throw new ConnectorAuthError(`${field} must be a non-empty string`);
+export function parseGDriveFolderId(folder: string): string {
+  if (typeof folder !== "string" || folder.trim() === "") {
+    throw new ConnectorScopeError("scope.folder must be a Drive folder ID or URL");
   }
-}
-
-function requireRecord(
-  value: unknown,
-  field: string,
-): asserts value is Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new ConnectorAuthError(`${field} must be an object`);
-  }
-}
-
-function createOAuth2Client(config: GDriveOAuthClientConfig) {
-  requireRecord(config, "config");
-  requireNonEmpty(config.clientId, "clientId");
-  requireNonEmpty(config.clientSecret, "clientSecret");
-  requireNonEmpty(config.redirectUri, "redirectUri");
-  return new google.auth.OAuth2(
-    config.clientId,
-    config.clientSecret,
-    config.redirectUri,
-  );
-}
-
-/**
- * Builds a Google consent URL that requests a reusable refresh token.
- *
- * Both offline access and an explicit consent prompt are intentional: Google
- * may otherwise omit the refresh token without reporting an error.
- */
-export function getAuthorizationUrl(config: GDriveOAuthClientConfig): string {
-  requireRecord(config, "config");
-  if (config.state !== undefined) requireNonEmpty(config.state, "state");
-  return createOAuth2Client(config).generateAuthUrl({
-    access_type: "offline",
-    prompt: "consent",
-    scope: [DRIVE_READONLY_SCOPE],
-    ...(config.state ? { state: config.state } : {}),
-  });
-}
-
-/** Exchanges a Google authorization code for reusable OAuth credentials. */
-export async function exchangeAuthorizationCode(
-  config: GDriveOAuthClientConfig & { code: string },
-): Promise<{
-  refreshToken: string;
-  accessToken?: string;
-  expiryDate?: number;
-}> {
-  requireRecord(config, "config");
-  requireNonEmpty(config.code, "code");
-  const auth = createOAuth2Client(config);
-  const { tokens } = await auth.getToken(config.code);
-
-  if (!tokens.refresh_token) {
-    throw new ConnectorAuthError(
-      "Google returned no refresh_token. Generate the consent URL with " +
-        'access_type:"offline" and prompt:"consent", then authorize again.',
-    );
-  }
-
-  return {
-    refreshToken: tokens.refresh_token,
-    ...(tokens.access_token ? { accessToken: tokens.access_token } : {}),
-    ...(typeof tokens.expiry_date === "number"
-      ? { expiryDate: tokens.expiry_date }
-      : {}),
-  };
-}
-
-/**
- * Creates an authenticated, read-only Google Drive v3 client.
- *
- * The connector owns no credential storage, OAuth consent redirect, or sync
- * scheduling. Consumers obtain credentials and control those concerns.
- */
-export function createDriveClient(
-  credentials: GDriveCredentials,
-): drive_v3.Drive {
-  requireRecord(credentials, "credentials");
-  if (credentials.type === "service-account") {
-    requireNonEmpty(credentials.keyJson, "keyJson");
-
-    let key: ServiceAccountKey;
+  const value = folder.trim();
+  let id = value;
+  if (value.startsWith("https://")) {
+    let url: URL;
     try {
-      key = JSON.parse(credentials.keyJson) as ServiceAccountKey;
+      url = new URL(value);
     } catch {
-      throw new ConnectorAuthError("keyJson must contain valid JSON");
+      throw new ConnectorScopeError("scope.folder must be a valid Drive folder URL");
     }
-
-    if (
-      typeof key !== "object" ||
-      key === null ||
-      Array.isArray(key) ||
-      typeof key.client_email !== "string" ||
-      key.client_email.trim() === ""
-    ) {
-      throw new ConnectorAuthError(
-        "Service-account keyJson must include a non-empty client_email",
-      );
+    const match = url.pathname.match(/^\/drive\/(?:u\/\d+\/)?folders\/([^/]+)\/?$/);
+    if (url.hostname !== "drive.google.com" || !match) {
+      throw new ConnectorScopeError("scope.folder must be a Drive folder URL");
     }
-    if (typeof key.private_key !== "string" || key.private_key.trim() === "") {
-      throw new ConnectorAuthError(
-        "Service-account keyJson must include a non-empty private_key",
-      );
-    }
-
-    const auth = new google.auth.JWT({
-      email: key.client_email,
-      key: key.private_key,
-      scopes: [DRIVE_READONLY_SCOPE],
-    });
-    return google.drive({ version: "v3", auth });
+    id = match[1] ?? "";
   }
+  if (!DRIVE_FOLDER_ID.test(id)) {
+    throw new ConnectorScopeError("scope.folder contains an invalid Drive folder ID");
+  }
+  return id;
+}
 
-  if (credentials.type !== "oauth") {
-    throw new ConnectorAuthError(
-      'credentials.type must be "service-account" or "oauth"',
+export function createGDriveConnector(
+  options: GDriveConnectorOptions,
+): GDriveConnector {
+  requireRecord(options, "options");
+  requireRecord(options.scope, "scope");
+  const configuredFolderId = "folder" in options.scope
+    ? parseGDriveFolderId(options.scope.folder as string)
+    : undefined;
+  if (!configuredFolderId && options.scope.allFiles !== true) {
+    throw new ConnectorScopeError(
+      'scope must contain either "folder" or allFiles: true',
     );
   }
 
-  requireNonEmpty(credentials.refreshToken, "refreshToken");
-  requireNonEmpty(credentials.clientId, "clientId");
-  requireNonEmpty(credentials.clientSecret, "clientSecret");
-
-  const auth = new google.auth.OAuth2(
-    credentials.clientId,
-    credentials.clientSecret,
-  );
-  auth.setCredentials({
-    refresh_token: credentials.refreshToken,
-    scope: DRIVE_READONLY_SCOPE,
-  });
-  return google.drive({ version: "v3", auth });
-}
-
-/** Restricts sync to a folder, or explicitly permits all visible files. */
-export type GDriveScope =
-  | { folder: string; allFiles?: never }
-  | { allFiles: true; folder?: never };
-
-/** Configuration for a Google Drive connector instance. */
-export interface GDriveConnectorOptions {
-  auth: GDriveCredentials;
-  scope: GDriveScope;
-  parser?: ParserFn;
-}
-
-/** Opaque state used to resume a cursor-based incremental sync. */
-export interface GDriveSyncCursor {
-  pageToken: string;
-}
-
-/** Result of a backfill or incremental sync page. */
-export interface GDriveSyncResult {
-  documents: ConnectorDocument[];
-  cursor: GDriveSyncCursor;
+  const drive = createDriveClient(options.auth);
+  let resolvedFolderId: Promise<string | undefined> | undefined;
+  const getFolderId = (): Promise<string | undefined> => {
+    resolvedFolderId ??= (configuredFolderId === "root"
+      ? drive.files.get({
+          fileId: "root",
+          fields: "id",
+          supportsAllDrives: true,
+        }).then(({ data }) => data.id ?? "root")
+      : Promise.resolve(configuredFolderId)).catch((error: unknown) => {
+        resolvedFolderId = undefined;
+        throw error;
+      });
+    return resolvedFolderId;
+  };
+  return {
+    listChanges: createListChanges({
+      drive,
+      getFolderId,
+    }),
+    fetchContent: createFetchContent(drive, options.parser as ParserFn | undefined),
+  };
 }

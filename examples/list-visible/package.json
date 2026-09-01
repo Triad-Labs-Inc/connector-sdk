@@ -1,10 +1,10 @@
 {
-  "name": "@triadlabs/example-oauth-flow",
+  "name": "@triadlabs/example-list-visible",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "oauth": "pnpm --filter @triadlabs/connectors-gdrive... build && tsx oauth.ts"
+    "start": "pnpm --filter @triadlabs/connectors-gdrive... build && tsx list.ts"
   },
   "dependencies": {
     "@triadlabs/connectors-gdrive": "workspace:*"

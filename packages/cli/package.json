@@ -1,0 +1,23 @@
+{
+  "name": "@triadlabs/connectors-cli",
+  "version": "0.0.1",
+  "description": "Standalone CLI for Triad Labs connectors",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "triad-connectors": "./dist/bin.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts src/bin.ts --format esm --clean",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@triadlabs/connectors-gdrive": "workspace:*"
+  }
+}

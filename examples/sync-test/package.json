@@ -1,10 +1,10 @@
 {
-  "name": "@triadlabs/example-oauth-flow",
+  "name": "@triadlabs/example-sync-test",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "oauth": "pnpm --filter @triadlabs/connectors-gdrive... build && tsx oauth.ts"
+    "sync": "pnpm --filter @triadlabs/connectors-gdrive... build && tsx sync.ts"
   },
   "dependencies": {
     "@triadlabs/connectors-gdrive": "workspace:*"
