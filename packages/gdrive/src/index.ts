@@ -347,7 +347,8 @@ export function createGDriveConnector(
     ]).get(doc.mimeType);
     const baseMimeType = doc.mimeType.split(";", 1)[0]?.trim().toLowerCase();
     const isDirectText = baseMimeType === "text/plain" ||
-      baseMimeType === "text/markdown";
+      baseMimeType === "text/markdown" ||
+      baseMimeType === "text/csv";
 
     let markdown: string;
     if (exportMimeType) {

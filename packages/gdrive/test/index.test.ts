@@ -343,6 +343,7 @@ describe("createGDriveConnector fetchContent", () => {
   it.each([
     ["text/plain", "plain text"],
     ["text/plain; charset=UTF-8", "plain text with charset"],
+    ["text/csv", "name,value\nalpha,1"],
   ])("downloads and decodes %s without a parser", async (mimeType, content) => {
     filesGetMock.mockResolvedValue({ data: new TextEncoder().encode(content) });
 
