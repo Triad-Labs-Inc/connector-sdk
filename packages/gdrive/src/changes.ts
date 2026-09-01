@@ -1,5 +1,8 @@
 import type { drive_v3 } from "googleapis";
-import type { ConnectorDocument } from "@triadlabs/connectors-core";
+import {
+  ConnectorCursorExpiredError,
+  type ConnectorDocument,
+} from "@triadlabs/connectors-core";
 import { requireNonEmpty } from "./auth.js";
 import { FILE_FIELDS } from "./types.js";
 import type {
@@ -13,7 +16,7 @@ import { listChildren, walk } from "./walk.js";
 
 interface ListChangesOptions {
   drive: drive_v3.Drive;
-  configuredFolderId?: string;
+  getFolderId: () => Promise<string | undefined>;
 }
 
 interface RunOptions extends ListChangesOptions {
@@ -51,21 +54,6 @@ function createWalkState(
 export function createListChanges(options: ListChangesOptions): (
   resume?: GDriveSyncResume,
 ) => Promise<GDriveSyncResult> {
-  let resolvedFolderId: Promise<string | undefined> | undefined;
-  const getFolderId = (): Promise<string | undefined> => {
-    resolvedFolderId ??= (options.configuredFolderId === "root"
-      ? options.drive.files.get({
-          fileId: "root",
-          fields: "id",
-          supportsAllDrives: true,
-        }).then(({ data }) => data.id ?? "root")
-      : Promise.resolve(options.configuredFolderId)).catch((error: unknown) => {
-        resolvedFolderId = undefined;
-        throw error;
-      });
-    return resolvedFolderId;
-  };
-
   return async (resume) => {
   const runOptions: RunOptions = {
     ...options,
@@ -91,12 +79,13 @@ export function createListChanges(options: ListChangesOptions): (
 
   const backfill = async (): Promise<GDriveSyncResult> => {
     const pageToken = await getStartPageToken(options.drive);
+    const folderId = await options.getFolderId();
     const documents: ConnectorDocument[] = [];
     const skipped: SkippedEntry[] = [];
     const state = createWalkState(runOptions, documents, skipped);
 
-    if (options.configuredFolderId) {
-      await walk(options.configuredFolderId, {
+    if (folderId) {
+      await walk(folderId, {
         descend: true,
         emitKnownFiles: true,
         descendNewTargetFolders: true,
@@ -116,7 +105,7 @@ export function createListChanges(options: ListChangesOptions): (
   const incremental = async (
     cursor: GDriveSyncCursor,
   ): Promise<GDriveSyncResult> => {
-    const folderId = await getFolderId();
+    const folderId = await options.getFolderId();
     requireNonEmpty(cursor.pageToken, "cursor.pageToken");
     const documents: ConnectorDocument[] = [];
     const removed: string[] = [];
@@ -174,13 +163,25 @@ export function createListChanges(options: ListChangesOptions): (
     let requestToken = cursor.pageToken;
     let durableToken = cursor.pageToken;
     for (;;) {
-      const page = await options.drive.changes.list({
-        pageToken: requestToken,
-        fields: `nextPageToken,newStartPageToken,changes(removed,fileId,file(${FILE_FIELDS}))`,
-        supportsAllDrives: true,
-        includeItemsFromAllDrives: true,
-        pageSize: 1000,
-      });
+      let page;
+      try {
+        page = await options.drive.changes.list({
+          pageToken: requestToken,
+          fields: `nextPageToken,newStartPageToken,changes(removed,fileId,file(${FILE_FIELDS}))`,
+          supportsAllDrives: true,
+          includeItemsFromAllDrives: true,
+          pageSize: 1000,
+        });
+      } catch (error) {
+        const candidate = error as {
+          code?: unknown;
+          response?: { status?: unknown };
+        };
+        if (candidate.code === 410 || candidate.response?.status === 410) {
+          throw new ConnectorCursorExpiredError();
+        }
+        throw error;
+      }
       for (const change of page.data.changes ?? []) {
         const id = change.fileId ?? change.file?.id;
         if (!id) continue;

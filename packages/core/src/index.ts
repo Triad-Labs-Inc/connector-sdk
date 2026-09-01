@@ -40,3 +40,12 @@ export class ConnectorExtractionError extends Error {
 export class ConnectorScopeError extends Error {
   override readonly name = "ConnectorScopeError";
 }
+
+/** A persisted provider cursor can no longer be used for incremental sync. */
+export class ConnectorCursorExpiredError extends Error {
+  override readonly name = "ConnectorCursorExpiredError";
+
+  constructor(message = "The sync cursor expired; a full backfill is required") {
+    super(message);
+  }
+}

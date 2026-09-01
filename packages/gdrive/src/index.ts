@@ -12,6 +12,7 @@ import type {
 
 export {
   ConnectorAuthError,
+  ConnectorCursorExpiredError,
   ConnectorExtractionError,
   ConnectorScopeError,
   type Connector,
@@ -83,10 +84,24 @@ export function createGDriveConnector(
   }
 
   const drive = createDriveClient(options.auth);
+  let resolvedFolderId: Promise<string | undefined> | undefined;
+  const getFolderId = (): Promise<string | undefined> => {
+    resolvedFolderId ??= (configuredFolderId === "root"
+      ? drive.files.get({
+          fileId: "root",
+          fields: "id",
+          supportsAllDrives: true,
+        }).then(({ data }) => data.id ?? "root")
+      : Promise.resolve(configuredFolderId)).catch((error: unknown) => {
+        resolvedFolderId = undefined;
+        throw error;
+      });
+    return resolvedFolderId;
+  };
   return {
     listChanges: createListChanges({
       drive,
-      configuredFolderId,
+      getFolderId,
     }),
     fetchContent: createFetchContent(drive, options.parser as ParserFn | undefined),
   };

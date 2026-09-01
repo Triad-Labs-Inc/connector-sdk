@@ -1,4 +1,5 @@
 import {
+  ConnectorCursorExpiredError,
   createGDriveConnector,
   type ConnectorDocument,
   type GDriveCredentials,
@@ -116,15 +117,6 @@ function printDocuments(documents: ConnectorDocument[]): void {
   for (const row of rows) console.log(format(row));
 }
 
-function isExpiredPageToken(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) return false;
-  const candidate = error as {
-    code?: unknown;
-    response?: { status?: unknown };
-  };
-  return candidate.code === 410 || candidate.response?.status === 410;
-}
-
 const localEnv = parseLocalEnv();
 const clientId = process.env.GOOGLE_CLIENT_ID ?? localEnv.GOOGLE_CLIENT_ID;
 const clientSecret =
@@ -213,7 +205,7 @@ async function run(): Promise<void> {
       savedAt: new Date().toISOString(),
     });
   } catch (error) {
-    if (!isExpiredPageToken(error)) throw error;
+    if (!(error instanceof ConnectorCursorExpiredError)) throw error;
     console.log("cursor expired — re-running full backfill");
     removeCursor();
     await backfill();

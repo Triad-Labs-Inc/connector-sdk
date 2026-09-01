@@ -1,4 +1,5 @@
 import {
+  ConnectorCursorExpiredError,
   ConnectorExtractionError,
   createGDriveConnector,
   type ConnectorDocument,
@@ -99,12 +100,6 @@ export interface SyncSummary {
   errors: number;
 }
 
-function isExpiredCursor(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) return false;
-  const candidate = error as { code?: unknown; response?: { status?: unknown } };
-  return candidate.code === 410 || candidate.response?.status === 410;
-}
-
 function safeOutputFile(outDir: string, output: string): string {
   const root = resolve(outDir);
   const target = resolve(root, output);
@@ -143,7 +138,7 @@ export async function syncDump(options: SyncOptions): Promise<{
   try {
     result = await options.connector.listChanges(previous?.resume);
   } catch (error) {
-    if (!previous || !isExpiredCursor(error)) throw error;
+    if (!previous || !(error instanceof ConnectorCursorExpiredError)) throw error;
     fullBackfill = true;
     result = await options.connector.listChanges();
   }

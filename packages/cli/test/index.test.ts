@@ -2,6 +2,7 @@ import type {
   ConnectorDocument,
   GDriveConnector,
 } from "@triadlabs/connectors-gdrive";
+import { ConnectorCursorExpiredError } from "@triadlabs/connectors-gdrive";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -175,7 +176,7 @@ describe("syncDump", () => {
     writeFileSync(join(directory, "Shortcut target.md"), "same content", "utf8");
     const connector: GDriveConnector = {
       listChanges: vi.fn()
-        .mockRejectedValueOnce(Object.assign(new Error("expired"), { code: 410 }))
+        .mockRejectedValueOnce(new ConnectorCursorExpiredError())
         .mockResolvedValueOnce({
           documents: [metadata],
           removed: [],

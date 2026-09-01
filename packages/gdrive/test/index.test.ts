@@ -38,6 +38,7 @@ vi.mock("googleapis", () => ({
 
 import {
   ConnectorAuthError,
+  ConnectorCursorExpiredError,
   ConnectorExtractionError,
   ConnectorScopeError,
   createGDriveConnector,
@@ -486,7 +487,12 @@ describe("createGDriveConnector listChanges", () => {
       .listChanges();
 
     expect(result.documents.map((document) => document.providerDocId)).toEqual(["nested"]);
-    expect(filesGetMock).not.toHaveBeenCalled();
+    expect(filesGetMock).toHaveBeenCalledOnce();
+    expect(filesGetMock).toHaveBeenCalledWith({
+      fileId: "root",
+      fields: "id",
+      supportsAllDrives: true,
+    });
     expect(filesListMock).toHaveBeenCalledWith(expect.objectContaining({
       q: "'target-folder' in parents and trashed = false",
     }));
@@ -494,7 +500,7 @@ describe("createGDriveConnector listChanges", () => {
 
   it("resolves restored shortcut targets during a fresh backfill", async () => {
     filesListMock.mockImplementation(async ({ q }: { q: string }) => ({ data: {
-      files: q.includes("'root'")
+      files: q.includes("'real-root'")
         ? [{
             id: "shortcut",
             mimeType: "application/vnd.google-apps.shortcut",
@@ -502,11 +508,15 @@ describe("createGDriveConnector listChanges", () => {
           }]
         : [],
     } }));
-    filesGetMock.mockResolvedValue({ data: {
-      id: "target-file",
-      name: "Restored target",
-      mimeType: "text/plain",
-    } });
+    filesGetMock.mockImplementation(async ({ fileId }: { fileId: string }) => ({
+      data: fileId === "root"
+        ? { id: "real-root" }
+        : {
+            id: "target-file",
+            name: "Restored target",
+            mimeType: "text/plain",
+          },
+    }));
 
     const result = await createGDriveConnector({
       auth,
@@ -809,5 +819,9 @@ describe("createGDriveConnector listChanges", () => {
     await expect(connector.listChanges({ cursor: { pageToken: "old" } })).rejects.toThrow("decode failure");
     expect(changesListMock).toHaveBeenNthCalledWith(1, expect.objectContaining({ pageToken: "old" }));
     expect(changesListMock).toHaveBeenNthCalledWith(2, expect.objectContaining({ pageToken: "old" }));
+
+    changesListMock.mockRejectedValueOnce({ response: { status: 410 } });
+    await expect(connector.listChanges({ cursor: { pageToken: "old" } }))
+      .rejects.toBeInstanceOf(ConnectorCursorExpiredError);
   });
 });
