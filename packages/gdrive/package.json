@@ -1,6 +1,6 @@
 {
   "name": "@triadlabs/connectors-gdrive",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Google Drive plumbing for consumer-owned document stores",
   "license": "MIT",
   "type": "module",
