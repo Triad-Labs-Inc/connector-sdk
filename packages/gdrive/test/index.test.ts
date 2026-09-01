@@ -511,8 +511,9 @@ describe("createGDriveConnector listChanges", () => {
     const result = await createGDriveConnector({
       auth,
       scope: { folder: "root" },
-      knownTargets: { files: ["target-file"], folders: [] },
-    }).listChanges();
+    }).listChanges({
+      visitedTargets: { files: ["target-file"], folders: [] },
+    });
 
     expect(result.documents.map((document) => document.providerDocId))
       .toEqual(["target-file"]);
@@ -569,7 +570,7 @@ describe("createGDriveConnector listChanges", () => {
       ] } })
       .mockResolvedValueOnce({ data: { newStartPageToken: "fresh", changes: [] } });
     filesGetMock.mockImplementation(async ({ fileId }: { fileId: string }) => ({ data: fileId === "p1" ? { id: "p1", parents: ["root"] } : { id: fileId, parents: [] } }));
-    const result = await createGDriveConnector({ auth, scope: { folder: "root" } }).listChanges({ pageToken: "old" });
+    const result = await createGDriveConnector({ auth, scope: { folder: "root" } }).listChanges({ cursor: { pageToken: "old" } });
     expect(result.removed).toEqual(["gone", "trash"]);
     expect(result.documents.map((d) => d.providerDocId)).toEqual(["deep"]);
     expect(result.cursor.pageToken).toBe("fresh");
@@ -585,7 +586,7 @@ describe("createGDriveConnector listChanges", () => {
       if (fileId === "denied") throw new Error("403");
       return { data: { id: fileId, parents: [] } };
     });
-    const result = await createGDriveConnector({ auth, scope: { folder: "root" } }).listChanges({ pageToken: "old" });
+    const result = await createGDriveConnector({ auth, scope: { folder: "root" } }).listChanges({ cursor: { pageToken: "old" } });
     expect(result.documents).toEqual([]);
   });
 
@@ -593,9 +594,12 @@ describe("createGDriveConnector listChanges", () => {
     filesListMock.mockResolvedValue({ data: { files: [{ id: "s", mimeType: "application/vnd.google-apps.shortcut", shortcutDetails: { targetId: "target" } }] } });
     filesGetMock.mockResolvedValue({ data: { id: "target", name: "Target", mimeType: "text/plain" } });
     const connector = createGDriveConnector({ auth, scope: { folder: "root" } });
-    await connector.listChanges();
+    const backfill = await connector.listChanges();
     changesListMock.mockResolvedValue({ data: { newStartPageToken: "fresh", changes: [{ fileId: "target", file: { id: "target", name: "Changed", mimeType: "text/plain", parents: [] } }] } });
-    const result = await connector.listChanges({ pageToken: "start" });
+    const result = await connector.listChanges({
+      cursor: { pageToken: "start" },
+      visitedTargets: backfill.visitedTargets,
+    });
     expect(result.documents[0]?.providerDocId).toBe("target");
   });
 
@@ -607,12 +611,15 @@ describe("createGDriveConnector listChanges", () => {
       ? { id: fileId, name: "Target folder", mimeType: "application/vnd.google-apps.folder" }
       : { id: fileId } }));
     const connector = createGDriveConnector({ auth, scope: { folder: "root" } });
-    await connector.listChanges();
+    const backfill = await connector.listChanges();
     changesListMock.mockResolvedValue({ data: { newStartPageToken: "fresh", changes: [
       { fileId: "nested", file: { id: "nested", name: "Changed", mimeType: "text/plain", parents: ["target-folder"] } },
     ] } });
 
-    const result = await connector.listChanges({ pageToken: "start" });
+    const result = await connector.listChanges({
+      cursor: { pageToken: "start" },
+      visitedTargets: backfill.visitedTargets,
+    });
 
     expect(result.documents.map((document) => document.providerDocId)).toEqual(["nested"]);
   });
@@ -627,8 +634,10 @@ describe("createGDriveConnector listChanges", () => {
     const result = await createGDriveConnector({
       auth,
       scope: { folder: "root" },
-      knownTargets: { files: [], folders: ["target-folder"] },
-    }).listChanges({ pageToken: "start" });
+    }).listChanges({
+      cursor: { pageToken: "start" },
+      visitedTargets: { files: [], folders: ["target-folder"] },
+    });
 
     expect(result.documents.map((document) => document.providerDocId)).toEqual(["nested"]);
   });
@@ -647,8 +656,13 @@ describe("createGDriveConnector listChanges", () => {
     const result = await createGDriveConnector({
       auth,
       scope: { folder: "root" },
-      knownTargets: { files: ["existing-file"], folders: ["target-folder"] },
-    }).listChanges({ pageToken: "start" });
+    }).listChanges({
+      cursor: { pageToken: "start" },
+      visitedTargets: {
+        files: ["existing-file"],
+        folders: ["target-folder"],
+      },
+    });
 
     expect(result.documents.map((document) => document.providerDocId)).toEqual(["new-file"]);
     expect(filesListMock).toHaveBeenCalledWith(expect.objectContaining({
@@ -677,7 +691,7 @@ describe("createGDriveConnector listChanges", () => {
         : { id: fileId, name: "Target folder", mimeType: "application/vnd.google-apps.folder" } }));
 
     const result = await createGDriveConnector({ auth, scope: { folder: "root" } })
-      .listChanges({ pageToken: "start" });
+      .listChanges({ cursor: { pageToken: "start" } });
 
     expect(result.documents.map((document) => document.providerDocId)).toEqual(["target-file", "nested"]);
   });
@@ -699,7 +713,7 @@ describe("createGDriveConnector listChanges", () => {
     }));
 
     const result = await createGDriveConnector({ auth, scope: { folder: "root" } })
-      .listChanges({ pageToken: "start" });
+      .listChanges({ cursor: { pageToken: "start" } });
 
     expect(result.documents.map((document) => document.providerDocId))
       .toEqual(["new-target"]);
@@ -725,7 +739,7 @@ describe("createGDriveConnector listChanges", () => {
     ] } });
 
     const result = await createGDriveConnector({ auth, scope: { folder: "root" } })
-      .listChanges({ pageToken: "start" });
+      .listChanges({ cursor: { pageToken: "start" } });
 
     expect(result.documents.map((document) => document.providerDocId))
       .toEqual(["existing-child"]);
@@ -760,7 +774,7 @@ describe("createGDriveConnector listChanges", () => {
     filesGetMock.mockResolvedValue({ data: { id: "real-root" } });
 
     const result = await createGDriveConnector({ auth, scope: { folder: "root" } })
-      .listChanges({ pageToken: "start" });
+      .listChanges({ cursor: { pageToken: "start" } });
 
     expect(result.documents.map((document) => document.providerDocId)).toEqual(["child"]);
     expect(filesGetMock).toHaveBeenCalledWith({ fileId: "root", fields: "id", supportsAllDrives: true });
@@ -773,9 +787,9 @@ describe("createGDriveConnector listChanges", () => {
       .mockResolvedValueOnce({ data: { id: "real-root" } });
     const connector = createGDriveConnector({ auth, scope: { folder: "root" } });
 
-    await expect(connector.listChanges({ pageToken: "start" }))
+    await expect(connector.listChanges({ cursor: { pageToken: "start" } }))
       .rejects.toThrow("temporary root lookup failure");
-    await expect(connector.listChanges({ pageToken: "start" }))
+    await expect(connector.listChanges({ cursor: { pageToken: "start" } }))
       .resolves.toMatchObject({ cursor: { pageToken: "fresh" } });
 
     expect(filesGetMock).toHaveBeenCalledTimes(2);
@@ -791,8 +805,8 @@ describe("createGDriveConnector listChanges", () => {
       badChange,
     ] } });
     const connector = createGDriveConnector({ auth, scope: { folder: "root" } });
-    await expect(connector.listChanges({ pageToken: "old" })).rejects.toThrow("decode failure");
-    await expect(connector.listChanges({ pageToken: "old" })).rejects.toThrow("decode failure");
+    await expect(connector.listChanges({ cursor: { pageToken: "old" } })).rejects.toThrow("decode failure");
+    await expect(connector.listChanges({ cursor: { pageToken: "old" } })).rejects.toThrow("decode failure");
     expect(changesListMock).toHaveBeenNthCalledWith(1, expect.objectContaining({ pageToken: "old" }));
     expect(changesListMock).toHaveBeenNthCalledWith(2, expect.objectContaining({ pageToken: "old" }));
   });

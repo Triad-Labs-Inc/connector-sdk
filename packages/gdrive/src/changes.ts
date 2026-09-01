@@ -4,6 +4,7 @@ import { requireNonEmpty } from "./auth.js";
 import { FILE_FIELDS } from "./types.js";
 import type {
   GDriveSyncCursor,
+  GDriveSyncResume,
   GDriveSyncResult,
   SkippedEntry,
   WalkState,
@@ -13,6 +14,9 @@ import { listChildren, walk } from "./walk.js";
 interface ListChangesOptions {
   drive: drive_v3.Drive;
   configuredFolderId?: string;
+}
+
+interface RunOptions extends ListChangesOptions {
   knownTargetFiles: Set<string>;
   knownTargetFolders: Set<string>;
 }
@@ -26,7 +30,7 @@ async function getStartPageToken(drive: drive_v3.Drive): Promise<string> {
 }
 
 function createWalkState(
-  options: ListChangesOptions,
+  options: RunOptions,
   documents: ConnectorDocument[],
   skipped: SkippedEntry[],
   scopeCache?: Map<string, boolean>,
@@ -45,7 +49,7 @@ function createWalkState(
 }
 
 export function createListChanges(options: ListChangesOptions): (
-  cursor?: GDriveSyncCursor,
+  resume?: GDriveSyncResume,
 ) => Promise<GDriveSyncResult> {
   let resolvedFolderId: Promise<string | undefined> | undefined;
   const getFolderId = (): Promise<string | undefined> => {
@@ -62,6 +66,13 @@ export function createListChanges(options: ListChangesOptions): (
     return resolvedFolderId;
   };
 
+  return async (resume) => {
+  const runOptions: RunOptions = {
+    ...options,
+    knownTargetFiles: new Set(resume?.visitedTargets?.files ?? []),
+    knownTargetFolders: new Set(resume?.visitedTargets?.folders ?? []),
+  };
+
   const result = (
     documents: ConnectorDocument[],
     removed: string[],
@@ -73,8 +84,8 @@ export function createListChanges(options: ListChangesOptions): (
     skipped,
     cursor: { pageToken },
     visitedTargets: {
-      files: [...options.knownTargetFiles],
-      folders: [...options.knownTargetFolders],
+      files: [...runOptions.knownTargetFiles],
+      folders: [...runOptions.knownTargetFolders],
     },
   });
 
@@ -82,7 +93,7 @@ export function createListChanges(options: ListChangesOptions): (
     const pageToken = await getStartPageToken(options.drive);
     const documents: ConnectorDocument[] = [];
     const skipped: SkippedEntry[] = [];
-    const state = createWalkState(options, documents, skipped);
+    const state = createWalkState(runOptions, documents, skipped);
 
     if (options.configuredFolderId) {
       await walk(options.configuredFolderId, {
@@ -112,14 +123,14 @@ export function createListChanges(options: ListChangesOptions): (
     const skipped: SkippedEntry[] = [];
     const scopeCache = new Map<string, boolean>();
     if (folderId) scopeCache.set(folderId, true);
-    for (const id of options.knownTargetFiles) scopeCache.set(id, true);
-    for (const id of options.knownTargetFolders) scopeCache.set(id, true);
-    const state = createWalkState(options, documents, skipped, scopeCache);
+    for (const id of runOptions.knownTargetFiles) scopeCache.set(id, true);
+    for (const id of runOptions.knownTargetFolders) scopeCache.set(id, true);
+    const state = createWalkState(runOptions, documents, skipped, scopeCache);
 
     const inScope = async (file: drive_v3.Schema$File): Promise<boolean> => {
       if (!folderId || (file.id && (
-        options.knownTargetFiles.has(file.id) ||
-        options.knownTargetFolders.has(file.id)
+        runOptions.knownTargetFiles.has(file.id) ||
+        runOptions.knownTargetFolders.has(file.id)
       ))) return true;
       const path: string[] = [];
       const active = new Set<string>();
@@ -152,7 +163,7 @@ export function createListChanges(options: ListChangesOptions): (
       return false;
     };
 
-    for (const targetFolderId of [...options.knownTargetFolders]) {
+    for (const targetFolderId of [...runOptions.knownTargetFolders]) {
       await walk(targetFolderId, {
         descend: true,
         emitKnownFiles: false,
@@ -191,5 +202,6 @@ export function createListChanges(options: ListChangesOptions): (
     return result(documents, removed, skipped, durableToken);
   };
 
-  return (cursor) => cursor ? incremental(cursor) : backfill();
+  return resume?.cursor ? incremental(resume.cursor) : backfill();
+  };
 }

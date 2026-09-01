@@ -34,6 +34,7 @@ export type {
   GDriveConnectorOptions,
   GDriveScope,
   GDriveSyncCursor,
+  GDriveSyncResume,
   GDriveSyncResult,
   SkippedEntry,
   SkippedReason,
@@ -82,14 +83,10 @@ export function createGDriveConnector(
   }
 
   const drive = createDriveClient(options.auth);
-  const knownTargetFiles = new Set(options.knownTargets?.files ?? []);
-  const knownTargetFolders = new Set(options.knownTargets?.folders ?? []);
   return {
     listChanges: createListChanges({
       drive,
       configuredFolderId,
-      knownTargetFiles,
-      knownTargetFolders,
     }),
     fetchContent: createFetchContent(drive, options.parser as ParserFn | undefined),
   };

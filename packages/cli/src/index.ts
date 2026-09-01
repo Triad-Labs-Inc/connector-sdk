@@ -4,8 +4,7 @@ import {
   type ConnectorDocument,
   type GDriveConnector,
   type GDriveCredentials,
-  type GDriveSyncCursor,
-  type VisitedTargets,
+  type GDriveSyncResume,
 } from "@triadlabs/connectors-gdrive";
 import { createHash } from "node:crypto";
 import {
@@ -31,8 +30,7 @@ export interface ManifestDocument {
 
 export interface DumpManifest {
   documents: ManifestDocument[];
-  cursor: GDriveSyncCursor;
-  visitedTargets: VisitedTargets;
+  resume: GDriveSyncResume;
   savedAt: string;
 }
 
@@ -75,7 +73,8 @@ export function allocateOutputPath(
 export function readManifest(path: string): DumpManifest | undefined {
   if (!existsSync(path)) return undefined;
   const value = JSON.parse(readFileSync(path, "utf8")) as Partial<DumpManifest>;
-  if (!Array.isArray(value.documents) || !value.cursor || !value.visitedTargets) {
+  if (!Array.isArray(value.documents) || !value.resume?.cursor ||
+    !value.resume.visitedTargets) {
     throw new Error(`Invalid manifest: ${path}`);
   }
   return value as DumpManifest;
@@ -142,7 +141,7 @@ export async function syncDump(options: SyncOptions): Promise<{
   let fullBackfill = !previous;
   let result;
   try {
-    result = await options.connector.listChanges(previous?.cursor);
+    result = await options.connector.listChanges(previous?.resume);
   } catch (error) {
     if (!previous || !isExpiredCursor(error)) throw error;
     fullBackfill = true;
@@ -220,8 +219,10 @@ export async function syncDump(options: SyncOptions): Promise<{
     documents: [...nextById.values()].sort((a, b) =>
       a.providerDocId.localeCompare(b.providerDocId),
     ),
-    cursor: result.cursor,
-    visitedTargets: result.visitedTargets,
+    resume: {
+      cursor: result.cursor,
+      visitedTargets: result.visitedTargets,
+    },
     savedAt: (options.now ?? (() => new Date()))().toISOString(),
   };
   writeManifest(join(options.outDir, "manifest.json"), manifest);
@@ -327,7 +328,6 @@ export async function runCli(
     const connector = createGDriveConnector({
       auth: credentials(args, env),
       scope: args.allFiles ? { allFiles: true } : { folder: args.folder as string },
-      knownTargets: previous?.visitedTargets,
     });
     const { summary } = await syncDump({ connector, outDir, previous });
     console.log(

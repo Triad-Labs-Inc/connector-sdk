@@ -35,6 +35,6 @@ SHA-256 content hashes. Shortcut target folders are re-walked during incremental
 syncs so newly created descendants are discovered even without an ancestor
 change event.
 
-Persist `visitedTargets` from a backfill result and pass it back as
-`knownTargets` when recreating the connector so incremental sync retains scope
+Persist `cursor` and `visitedTargets` from a result as one resume blob and pass
+that blob to `listChanges` so incremental sync retains scope
 for shortcut targets.

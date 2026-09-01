@@ -70,8 +70,10 @@ describe("manifest", () => {
         contentHash: "abc",
         output: "Doc.md",
       }],
-      cursor: { pageToken: "next" },
-      visitedTargets: { files: ["file-1"], folders: ["folder-1"] },
+      resume: {
+        cursor: { pageToken: "next" },
+        visitedTargets: { files: ["file-1"], folders: ["folder-1"] },
+      },
       savedAt: "2026-08-31T00:00:00.000Z",
     };
     writeManifest(path, manifest);
@@ -145,14 +147,16 @@ describe("syncDump", () => {
         contentHash: "same-hash",
         output: "Doc.md",
       }],
-      cursor: { pageToken: "old" },
-      visitedTargets: { files: [], folders: [] },
+      resume: {
+        cursor: { pageToken: "old" },
+        visitedTargets: { files: [], folders: [] },
+      },
       savedAt: "2026-08-30T00:00:00.000Z",
     };
 
     const { summary } = await syncDump({ connector, outDir: directory, previous });
 
-    expect(connector.listChanges).toHaveBeenCalledWith(previous.cursor);
+    expect(connector.listChanges).toHaveBeenCalledWith(previous.resume);
     expect(connector.fetchContent).toHaveBeenCalledWith(metadata);
     expect(summary).toEqual({ new: 0, updated: 0, unchanged: 1, removed: 0, errors: 0 });
     expect(() => readFileSync(join(directory, "Doc.md"), "utf8")).toThrow();
@@ -191,8 +195,10 @@ describe("syncDump", () => {
         contentHash: "same-hash",
         output: "Shortcut target.md",
       }],
-      cursor: { pageToken: "expired" },
-      visitedTargets: { files: ["shortcut-target"], folders: [] },
+      resume: {
+        cursor: { pageToken: "expired" },
+        visitedTargets: { files: ["shortcut-target"], folders: [] },
+      },
       savedAt: "2026-08-30T00:00:00.000Z",
     };
 
@@ -202,7 +208,7 @@ describe("syncDump", () => {
       previous,
     });
 
-    expect(connector.listChanges).toHaveBeenNthCalledWith(1, previous.cursor);
+    expect(connector.listChanges).toHaveBeenNthCalledWith(1, previous.resume);
     expect(connector.listChanges).toHaveBeenNthCalledWith(2);
     expect(manifest.documents.map((document) => document.providerDocId))
       .toEqual(["shortcut-target"]);

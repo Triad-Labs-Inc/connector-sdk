@@ -14,8 +14,6 @@ export interface GDriveConnectorOptions {
   auth: GDriveCredentials;
   scope: GDriveScope;
   parser?: ParserFn;
-  /** Shortcut targets restored from a previous sync result. */
-  knownTargets?: VisitedTargets;
 }
 
 export interface VisitedTargets {
@@ -25,6 +23,11 @@ export interface VisitedTargets {
 
 export interface GDriveSyncCursor {
   pageToken: string;
+}
+
+export interface GDriveSyncResume {
+  cursor?: GDriveSyncCursor;
+  visitedTargets?: VisitedTargets;
 }
 
 export type SkippedReason =
@@ -48,7 +51,7 @@ export interface GDriveSyncResult {
 }
 
 export interface GDriveConnector extends Connector<
-  GDriveSyncCursor,
+  GDriveSyncResume,
   GDriveSyncResult,
   ConnectorDocument
 > {}

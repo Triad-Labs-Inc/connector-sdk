@@ -2,8 +2,7 @@ import {
   createGDriveConnector,
   type ConnectorDocument,
   type GDriveCredentials,
-  type GDriveSyncCursor,
-  type VisitedTargets,
+  type GDriveSyncResume,
 } from "@triadlabs/connectors-gdrive";
 import { Buffer } from "node:buffer";
 import {
@@ -41,8 +40,7 @@ function parseLocalEnv(): Record<string, string> {
 }
 
 interface SavedState {
-  cursor: GDriveSyncCursor;
-  visitedTargets: VisitedTargets;
+  resume: GDriveSyncResume;
   savedAt: string;
 }
 
@@ -171,7 +169,6 @@ const auth: GDriveCredentials = {
 const connector = createGDriveConnector({
   auth,
   scope: allFiles ? { allFiles: true } : { folder: folder as string },
-  knownTargets: saved?.visitedTargets,
 });
 
 async function backfill(): Promise<void> {
@@ -184,8 +181,7 @@ async function backfill(): Promise<void> {
   printDocuments(result.documents);
   await extractDocuments(result.documents);
   persistCursor({
-    cursor: result.cursor,
-    visitedTargets,
+    resume: { cursor: result.cursor, visitedTargets },
     savedAt: new Date().toISOString(),
   });
   console.log(
@@ -199,7 +195,7 @@ async function run(): Promise<void> {
     return;
   }
   try {
-    const result = await connector.listChanges(saved.cursor);
+    const result = await connector.listChanges(saved.resume);
     console.log(
       `incremental: ${result.documents.length} changed, ${result.removed.length} removed`,
     );
@@ -210,8 +206,10 @@ async function run(): Promise<void> {
       for (const id of result.removed) console.log(`  ${id}`);
     }
     persistCursor({
-      cursor: result.cursor,
-      visitedTargets: result.visitedTargets,
+      resume: {
+        cursor: result.cursor,
+        visitedTargets: result.visitedTargets,
+      },
       savedAt: new Date().toISOString(),
     });
   } catch (error) {
