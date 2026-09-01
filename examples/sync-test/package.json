@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "sync": "pnpm --filter @triadlabs/connectors-gdrive build && tsx sync.ts"
+    "sync": "pnpm --filter @triadlabs/connectors-gdrive... build && tsx sync.ts"
   },
   "dependencies": {
     "@triadlabs/connectors-gdrive": "workspace:*"
