@@ -111,8 +111,9 @@ listChanges(resume?: { cursor?: GDriveSyncCursor; visitedTargets?: VisitedTarget
 - **No argument → backfill.** Walks the scope, returns every document plus a
   fresh cursor and the initial `visitedTargets`.
 - **`resume` present → incremental.** Reads the Drive changes feed from
-  `resume.cursor`, re-walks known shortcut-target folders to discover new
-  descendants, and returns only changes.
+  `resume.cursor`, checks changed files against the folder and known shortcut
+  targets, and returns changes. Structural changes request a fresh backfill
+  (see Membership changes below).
 - **The connector owns no state.** Resume data goes in as an argument and
   comes out in the result. Persist it (database, file, wherever) and pass it
   back next run. Reusing a connector instance across calls does **not**
@@ -126,10 +127,11 @@ listChanges(resume?: { cursor?: GDriveSyncCursor; visitedTargets?: VisitedTarget
 ```ts
 {
   documents: ConnectorDocument[];  // new or updated (metadata only until fetchContent)
-  removed: string[];               // providerDocIds that were deleted or trashed
+  removed: string[];               // IDs no longer reachable through this source
   skipped: SkippedEntry[];         // { id, name?, reason } — see below
   cursor: GDriveSyncCursor;        // persist me
   visitedTargets: VisitedTargets;  // persist me
+  coverage?: "complete" | "partial"; // only a complete backfill permits a sweep
 }
 ```
 

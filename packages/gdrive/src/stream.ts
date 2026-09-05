@@ -6,7 +6,7 @@ import type { GDriveCheckpoint, GDriveStreamEvent, GDriveSyncResume, SkippedEntr
 
 interface Options {
   drive: drive_v3.Drive;
-  getFolderId: () => Promise<string | undefined>;
+  getFolderId: (signal?: AbortSignal) => Promise<string | undefined>;
 }
 
 function copy<T>(value: T): T { return structuredClone(value); }
@@ -44,7 +44,7 @@ export function createIterateChanges({ drive, getFolderId }: Options) {
     if (resume !== undefined && (resume === null || typeof resume !== "object" || Array.isArray(resume))) {
       throw new ConnectorResumeError("Resume state must be an object");
     }
-    const folderId = await getFolderId();
+    const folderId = await getFolderId(signal);
     const scope = folderId ? `folder:${folderId}` : "allFiles";
     let state: GDriveCheckpoint;
     if (resume && "version" in resume) {
@@ -126,8 +126,8 @@ export function createIterateChanges({ drive, getFolderId }: Options) {
         }
         return;
       }
-      if (phase === "backfill" && seenFiles.has(item.id)) return;
       if (shortcut && !state.visitedTargets.files.includes(item.id)) state.visitedTargets.files.push(item.id);
+      if (phase === "backfill" && seenFiles.has(item.id)) return;
       if (!item.name || !item.mimeType) throw new Error(`Drive returned incomplete metadata for ${item.id}`);
       seenFiles.add(item.id);
       if (phase === "backfill") state.visitedFiles.push(item.id);

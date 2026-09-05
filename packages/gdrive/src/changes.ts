@@ -5,7 +5,7 @@ import type { GDriveSyncResume, GDriveSyncResult } from "./types.js";
 /** Compatibility accumulator over the same provider events used by durable consumers. */
 export function createListChanges(options: {
   drive: drive_v3.Drive;
-  getFolderId: () => Promise<string | undefined>;
+  getFolderId: (signal?: AbortSignal) => Promise<string | undefined>;
 }) {
   const iterate = createIterateChanges(options);
   return async (resume?: GDriveSyncResume): Promise<GDriveSyncResult> => {

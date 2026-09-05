@@ -441,6 +441,19 @@ describe("listChanges compatibility accumulator", () => {
     await createGDriveConnector({ auth, scope: { folder: "root" } }).listChanges();
     expect(filesListMock).toHaveBeenCalledWith(expect.objectContaining({ q: "'real-root' in parents and trashed = false" }), expect.any(Object));
   });
+  it("cancels root alias resolution and permits a later retry", async () => {
+    const controller = new AbortController();
+    filesGetMock.mockImplementationOnce(async (_params, { signal }: { signal: AbortSignal }) => {
+      controller.abort();
+      signal.throwIfAborted();
+    });
+    const connector = createGDriveConnector({ auth, scope: { folder: "root" } });
+    await expect((async () => {
+      for await (const _event of connector.iterateChanges(undefined, { signal: controller.signal })) { /* consume */ }
+    })()).rejects.toMatchObject({ name: "AbortError" });
+    expect(filesListMock).not.toHaveBeenCalled();
+    expect(await connector.listChanges()).toMatchObject({ coverage: "complete" });
+  });
   it("preserves final event order when a document is changed then removed", async () => {
     changesListMock.mockResolvedValue({ data: { changes: [
       { file: { id: "one", name: "One", mimeType: "text/plain" } },

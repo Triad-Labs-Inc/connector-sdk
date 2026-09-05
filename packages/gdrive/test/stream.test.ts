@@ -126,6 +126,19 @@ describe("streaming discovery", () => {
 });
 
 describe("source membership", () => {
+  it("retains shortcut membership when its target was already discovered directly", async () => {
+    list.mockResolvedValue({ data: { files: [file("target"), file("link", { mimeType: shortcutMime, shortcutDetails: { targetId: "target" } })] } });
+    get.mockImplementation(async ({ fileId }) => ({ data: fileId === "root" ? { id: "root", mimeType: folderMime } : file("target") }));
+    const backfill = await collect(make()());
+    expect(ids(backfill)).toEqual(["target"]);
+    const resume = lastResume(backfill);
+    expect(resume.visitedTargets.files).toEqual(["target"]);
+    changes.mockResolvedValue({ data: { changes: [{ file: file("target", { parents: [] }) }], newStartPageToken: "end" } });
+    const incremental = await collect(make()(resume));
+    expect(ids(incremental)).toEqual(["target"]);
+    expect(incremental.some(e => e.kind === "removed")).toBe(false);
+  });
+
   it("emits removal when a live file leaves the selected folder", async () => {
     changes.mockResolvedValue({ data: { changes: [{ file: file("moved", { parents: [] }) }], newStartPageToken: "end" } });
     const events = await collect(make()({ cursor: { pageToken: "start" } }));

@@ -90,18 +90,17 @@ export function createGDriveConnector(
   }
 
   const drive = createDriveClient(options.auth);
-  let resolvedFolderId: Promise<string | undefined> | undefined;
-  const getFolderId = (): Promise<string | undefined> => {
-    resolvedFolderId ??= (configuredFolderId === "root"
-      ? drive.files.get({
-          fileId: "root",
-          fields: "id",
-          supportsAllDrives: true,
-        }).then(({ data }) => data.id ?? "root")
-      : Promise.resolve(configuredFolderId)).catch((error: unknown) => {
-        resolvedFolderId = undefined;
-        throw error;
-      });
+  let resolvedFolderId: string | undefined;
+  const getFolderId = async (signal?: AbortSignal): Promise<string | undefined> => {
+    if (configuredFolderId !== "root") return configuredFolderId;
+    if (resolvedFolderId) return resolvedFolderId;
+    const { data } = await drive.files.get({
+      fileId: "root",
+      fields: "id",
+      supportsAllDrives: true,
+    }, { signal });
+    if (!data.id) throw new Error("Drive returned no ID for the root folder");
+    resolvedFolderId = data.id;
     return resolvedFolderId;
   };
   return {
