@@ -97,6 +97,7 @@ describe("syncDump", () => {
       markdown: "",
     };
     const connector: GDriveConnector = {
+      iterateChanges: vi.fn(),
       listChanges: vi.fn().mockResolvedValue({
         documents: [metadata],
         removed: [],
@@ -129,6 +130,7 @@ describe("syncDump", () => {
       markdown: "",
     };
     const connector: GDriveConnector = {
+      iterateChanges: vi.fn(),
       listChanges: vi.fn().mockResolvedValue({
         documents: [metadata],
         removed: [],
@@ -175,6 +177,7 @@ describe("syncDump", () => {
     };
     writeFileSync(join(directory, "Shortcut target.md"), "same content", "utf8");
     const connector: GDriveConnector = {
+      iterateChanges: vi.fn(),
       listChanges: vi.fn()
         .mockRejectedValueOnce(new ConnectorCursorExpiredError())
         .mockResolvedValueOnce({

@@ -200,3 +200,42 @@ try {
 ## License
 
 MIT
+
+## Streaming discovery and durable checkpoints
+
+`iterateChanges()` streams metadata before a traversal finishes. Persist **the
+entire** versioned checkpoint after all preceding events have durable outcomes
+or durable pending work in your store. Replays are possible; destination writes
+must be idempotent. A provider checkpoint is not proof that content delivery has
+finished. The connector never acknowledges your writes itself.
+
+```ts
+for await (const event of connector.iterateChanges(savedCheckpoint, { signal })) {
+  if (event.kind === "document") await recordPendingDocument(event.document);
+  if (event.kind === "removed") await recordRemoval(event.providerDocId);
+  if (event.kind === "skipped") await recordSkip(event.entry);
+  if (event.kind === "progress") showProgress(event);
+  if (event.kind === "checkpoint" || event.kind === "complete") {
+    await commitPriorWorkAndCheckpoint(event.resume);
+  }
+}
+```
+
+The helper functions above belong to your application. Resume values are opaque
+JSON, bound to the resolved folder or `allFiles` scope. They include unfinished
+folder pagination and the original pre-backfill changes token. Recreate the
+connector after a restart and pass the saved object to continue. Invalid state
+raises `ConnectorResumeError` (a `ConnectorCursorExpiredError` subtype).
+
+`complete` distinguishes backfill/incremental and `complete`/`partial` coverage.
+Only a complete backfill is an inventory suitable for retiring unseen source
+memberships. Incremental results never imply unseen files are gone. Cancellation
+or provider failure throws without emitting completion. Counters describe known
+discovery progress; no total is invented. One provider page is buffered, plus
+traversal/visited-ID state that grows with the corpus.
+
+The legacy `listChanges()` API remains available. Its `{ cursor, visitedTargets }`
+resume value can start the iterator between scans, but cannot represent an
+unfinished walk. Save streaming checkpoints whole rather than extracting those
+two fields. Keep credentials/source configuration paired with their own resume
+state; resetting or replacing credentials requires a deliberate new backfill.

@@ -3,6 +3,7 @@ import {
   type ParserFn,
 } from "@triadlabs/connectors-core";
 import { createDriveClient, requireRecord } from "./auth.js";
+import { createIterateChanges } from "./stream.js";
 import { createListChanges } from "./changes.js";
 import { createFetchContent } from "./extract.js";
 import type {
@@ -11,6 +12,7 @@ import type {
 } from "./types.js";
 
 export {
+  ConnectorResumeError,
   ConnectorAuthError,
   ConnectorCursorExpiredError,
   ConnectorExtractionError,
@@ -33,6 +35,8 @@ export {
 export type {
   GDriveConnector,
   GDriveConnectorOptions,
+  GDriveCheckpoint,
+  GDriveStreamEvent,
   GDriveScope,
   GDriveSyncCursor,
   GDriveSyncResume,
@@ -99,6 +103,7 @@ export function createGDriveConnector(
     return resolvedFolderId;
   };
   return {
+    iterateChanges: createIterateChanges({ drive, getFolderId }),
     listChanges: createListChanges({
       drive,
       getFolderId,

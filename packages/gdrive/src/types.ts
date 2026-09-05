@@ -54,7 +54,9 @@ export interface GDriveConnector extends Connector<
   GDriveSyncResume,
   GDriveSyncResult,
   ConnectorDocument
-> {}
+> {
+  iterateChanges(resume?: GDriveCheckpoint | GDriveSyncResume, options?: { signal?: AbortSignal }): AsyncIterable<GDriveStreamEvent>;
+}
 
 export const FOLDER_MIME = "application/vnd.google-apps.folder";
 export const SHORTCUT_MIME = "application/vnd.google-apps.shortcut";
@@ -72,3 +74,26 @@ export interface WalkState {
   knownTargetFolders: Set<string>;
   scopeCache?: Map<string, boolean>;
 }
+
+/** Opaque, serializable state. Persist the entire object after prior writes commit. */
+export interface GDriveCheckpoint {
+  version: 1;
+  scope: string;
+  phase: "backfill" | "incremental" | "idle";
+  cursor: GDriveSyncCursor;
+  pendingFolders: Array<{ id: string | null; pageToken?: string }>;
+  visitedFiles: string[];
+  visitedFolders: string[];
+  visitedTargets: VisitedTargets;
+  filesDiscovered: number;
+  foldersVisited: number;
+  coverage: "complete" | "partial";
+}
+
+export type GDriveStreamEvent =
+  | { kind: "document"; document: ConnectorDocument; discoveredVia: "direct" | "shortcut" }
+  | { kind: "removed"; providerDocId: string; reason: "deleted" | "trashed" | "outOfScope" | "accessLost" }
+  | { kind: "skipped"; entry: SkippedEntry }
+  | { kind: "progress"; phase: "backfill" | "incremental"; filesDiscovered: number; foldersVisited: number }
+  | { kind: "checkpoint"; resume: GDriveCheckpoint }
+  | { kind: "complete"; phase: "backfill" | "incremental"; coverage: "complete" | "partial"; resume: GDriveCheckpoint };
