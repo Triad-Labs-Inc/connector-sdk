@@ -60,7 +60,7 @@ export function createIterateChanges({ drive, getFolderId }: Options) {
     } else {
       if (resume && (Object.keys(resume).some(key => !["cursor", "visitedTargets"].includes(key)) ||
           (resume.cursor !== undefined && (typeof resume.cursor?.pageToken !== "string" || !resume.cursor.pageToken)) ||
-          (resume.visitedTargets !== undefined && (!strings(resume.visitedTargets.files) || !strings(resume.visitedTargets.folders))))) {
+          (resume.visitedTargets !== undefined && (!strings(resume.visitedTargets?.files) || !strings(resume.visitedTargets?.folders))))) {
         throw new ConnectorResumeError("Invalid legacy resume state");
       }
       let token = resume?.cursor?.pageToken;
@@ -107,7 +107,8 @@ export function createIterateChanges({ drive, getFolderId }: Options) {
 
     async function* document(file: drive_v3.Schema$File, descend: boolean): AsyncGenerator<GDriveStreamEvent> {
       signal?.throwIfAborted();
-      if (!file.id || file.trashed) return;
+      if (!file.id) throw new Error("Drive returned a file without an ID");
+      if (file.trashed) return;
       const shortcut = file.mimeType === SHORTCUT_MIME;
       const resolved = await resolve(file);
       if ("reason" in resolved) {

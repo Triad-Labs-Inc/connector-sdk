@@ -117,6 +117,21 @@ describe("streaming discovery", () => {
     }
   });
 
+  it("rejects malformed legacy state with an actionable resume error", async () => {
+    for (const resume of [null, [], { visitedTargets: null }, { cursor: null }, { extra: true }]) {
+      await expect(collect(make()(resume as never))).rejects.toBeInstanceOf(ConnectorResumeError);
+    }
+  });
+
+  it("does not authorize a sweep when provider file metadata is malformed", async () => {
+    list.mockResolvedValue({ data: { files: [{ name: "missing ID", mimeType: "text/plain" }] } });
+    const events: GDriveStreamEvent[] = [];
+    await expect((async () => {
+      for await (const event of make()()) events.push(event);
+    })()).rejects.toBeInstanceOf(ConnectorProviderError);
+    expect(events.some(e => e.kind === "complete")).toBe(false);
+  });
+
   it("handles whole-drive discovery without a root-folder lookup", async () => {
     const iterate = createIterateChanges({ drive, getFolderId: async () => undefined });
     list.mockResolvedValue({ data: { files: [file("one")] } });
