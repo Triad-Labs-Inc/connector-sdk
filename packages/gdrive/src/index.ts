@@ -3,6 +3,7 @@ import {
   type ParserFn,
 } from "@triadlabs/connectors-core";
 import { createDriveClient, requireRecord } from "./auth.js";
+import { createIterateChanges } from "./stream.js";
 import { createListChanges } from "./changes.js";
 import { createFetchContent } from "./extract.js";
 import type {
@@ -11,6 +12,12 @@ import type {
 } from "./types.js";
 
 export {
+  ConnectorContentChangedError,
+  type FetchContentOptions,
+  type ParserContext,
+  ConnectorRescanRequiredError,
+  ConnectorProviderError,
+  ConnectorResumeError,
   ConnectorAuthError,
   ConnectorCursorExpiredError,
   ConnectorExtractionError,
@@ -33,6 +40,8 @@ export {
 export type {
   GDriveConnector,
   GDriveConnectorOptions,
+  GDriveCheckpoint,
+  GDriveStreamEvent,
   GDriveScope,
   GDriveSyncCursor,
   GDriveSyncResume,
@@ -84,21 +93,21 @@ export function createGDriveConnector(
   }
 
   const drive = createDriveClient(options.auth);
-  let resolvedFolderId: Promise<string | undefined> | undefined;
-  const getFolderId = (): Promise<string | undefined> => {
-    resolvedFolderId ??= (configuredFolderId === "root"
-      ? drive.files.get({
-          fileId: "root",
-          fields: "id",
-          supportsAllDrives: true,
-        }).then(({ data }) => data.id ?? "root")
-      : Promise.resolve(configuredFolderId)).catch((error: unknown) => {
-        resolvedFolderId = undefined;
-        throw error;
-      });
+  let resolvedFolderId: string | undefined;
+  const getFolderId = async (signal?: AbortSignal): Promise<string | undefined> => {
+    if (configuredFolderId !== "root") return configuredFolderId;
+    if (resolvedFolderId) return resolvedFolderId;
+    const { data } = await drive.files.get({
+      fileId: "root",
+      fields: "id",
+      supportsAllDrives: true,
+    }, { signal });
+    if (!data.id) throw new Error("Drive returned no ID for the root folder");
+    resolvedFolderId = data.id;
     return resolvedFolderId;
   };
   return {
+    iterateChanges: createIterateChanges({ drive, getFolderId }),
     listChanges: createListChanges({
       drive,
       getFolderId,

@@ -31,9 +31,11 @@ Markdown file per document plus a `manifest.json` with metadata, content
 hashes, and incremental cursor state; binary formats are recorded as errors in
 the manifest until a parser is configured.
 
-Packages are not yet published to npm — consumers install from git. Test
-coverage is mocked at the Drive API boundary; live end-to-end verification is
-tracked separately.
+Durable consumers can stream discovery with serializable checkpoints, reconcile
+complete inventories, and bound content downloads. See
+[Durable sync integration](docs/DURABLE_SYNC.md) for the worker contract and tests.
+Automated tests exercise the Drive API boundary with fixtures; an optional
+read-only live smoke script verifies inventory, restart, and content retrieval.
 
 ## License
 

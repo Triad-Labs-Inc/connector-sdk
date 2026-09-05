@@ -158,7 +158,7 @@ export async function syncDump(options: SyncOptions): Promise<{
     errors: 0,
   };
 
-  if (fullBackfill && previous) {
+  if (fullBackfill && previous && result.coverage !== "partial" && result.skipped.length === 0) {
     const returnedIds = new Set(result.documents.map((document) => document.providerDocId));
     for (const old of previous.documents) {
       if (returnedIds.has(old.providerDocId)) continue;

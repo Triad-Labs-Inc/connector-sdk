@@ -27,6 +27,8 @@ import {
   type Connector,
   type ConnectorDocument,
   type ParserFn,
+  type ParserContext,
+  type FetchContentOptions,
   ConnectorAuthError,
   ConnectorCursorExpiredError,
   ConnectorExtractionError,
@@ -44,6 +46,8 @@ interface ConnectorDocument {
   webViewLink?: string;
   url?: string;
   modifiedAt: string;
+  sizeBytes?: number;
+  providerVersion?: string;
   contentHash: string;     // SHA-256 of markdown, filled by fetchContent
   markdown: string;        // empty until fetchContent
 }
@@ -54,7 +58,7 @@ never bundle a parser; you bring your own pipeline (local parser, paid API,
 LLM, whatever):
 
 ```ts
-type ParserFn = (bytes: Uint8Array, mimeType: string) => Promise<string>;
+type ParserFn = (bytes: Uint8Array, mimeType: string, context?: ParserContext) => Promise<string>;
 ```
 
 **`Connector<Cursor, Result, Document>`** — the minimal source-agnostic
@@ -63,7 +67,7 @@ contract:
 ```ts
 interface Connector<Cursor, Result, Document extends ConnectorDocument> {
   listChanges(cursor?: Cursor): Promise<Result>;
-  fetchContent(doc: Document): Promise<Document>;
+  fetchContent(doc: Document, options?: FetchContentOptions): Promise<Document>;
 }
 ```
 
@@ -75,6 +79,19 @@ interface Connector<Cursor, Result, Document extends ConnectorDocument> {
   its type)
 - `ConnectorCursorExpiredError` — a persisted cursor can no longer be used;
   catch it and run a full backfill
+- `ConnectorResumeError` — malformed or incompatible state; cursor-error subtype
+- `ConnectorRescanRequiredError` — source topology needs a new inventory; cursor-error subtype
+- `ConnectorProviderError` — safe `status`, `retryable`, and optional `retryAfterMs`
+- `ConnectorContentChangedError` — content changed during download; retry the file
+
+`FetchContentOptions` carries an optional `signal`, `maxBytes`, and
+`maxOutputCharacters`. `ParserContext` carries the document ID, name, MIME type,
+optional size, and signal. Parsers remain consumer-owned; a signal requires
+cooperative cancellation or an external worker/process supervisor.
+
+`ConnectorExtractionError` has a `reason` and optional `providerDocId`. Its reasons
+are `unsupported`, `encrypted`, `malformed`, `resourceLimit`, `needsOcr`, and
+`parserFailed`. Existing message-only constructors remain valid.
 
 ## Building a connector
 

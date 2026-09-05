@@ -97,6 +97,7 @@ describe("syncDump", () => {
       markdown: "",
     };
     const connector: GDriveConnector = {
+      iterateChanges: vi.fn(),
       listChanges: vi.fn().mockResolvedValue({
         documents: [metadata],
         removed: [],
@@ -129,6 +130,7 @@ describe("syncDump", () => {
       markdown: "",
     };
     const connector: GDriveConnector = {
+      iterateChanges: vi.fn(),
       listChanges: vi.fn().mockResolvedValue({
         documents: [metadata],
         removed: [],
@@ -175,6 +177,7 @@ describe("syncDump", () => {
     };
     writeFileSync(join(directory, "Shortcut target.md"), "same content", "utf8");
     const connector: GDriveConnector = {
+      iterateChanges: vi.fn(),
       listChanges: vi.fn()
         .mockRejectedValueOnce(new ConnectorCursorExpiredError())
         .mockResolvedValueOnce({
@@ -217,4 +220,24 @@ describe("syncDump", () => {
     expect(readFileSync(join(directory, "Shortcut target.md"), "utf8"))
       .toBe("same content");
   });
+});
+
+it.each(["partial", "skipped"])("does not delete local documents after a %s replacement inventory", async (mode) => {
+  const outDir = temporaryDirectory();
+  writeFileSync(join(outDir, "Old.md"), "retain me");
+  const previous: DumpManifest = {
+    documents: [{ providerDocId: "old", name: "Old", mimeType: "text/plain", modifiedAt: "", contentHash: "hash", output: "Old.md" }],
+    resume: { cursor: { pageToken: "expired" }, visitedTargets: { files: [], folders: [] } }, savedAt: "",
+  };
+  const connector: GDriveConnector = {
+    iterateChanges: vi.fn(), fetchContent: vi.fn(),
+    listChanges: vi.fn().mockRejectedValueOnce(new ConnectorCursorExpiredError()).mockResolvedValueOnce({
+      documents: [], removed: [], skipped: mode === "skipped" ? [{ id: "link", reason: "shortcut_target_unreadable" }] : [],
+      coverage: mode === "partial" ? "partial" : "complete", cursor: { pageToken: "next" }, visitedTargets: { files: [], folders: [] },
+    }),
+  };
+  const result = await syncDump({ connector, outDir, previous });
+  expect(result.summary.removed).toBe(0);
+  expect(result.manifest.documents.map(d => d.providerDocId)).toEqual(["old"]);
+  expect(readFileSync(join(outDir, "Old.md"), "utf8")).toBe("retain me");
 });
