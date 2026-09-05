@@ -6,14 +6,31 @@ export interface ConnectorDocument {
   webViewLink?: string;
   url?: string;
   modifiedAt: string;
+  sizeBytes?: number;
+  providerVersion?: string;
   contentHash: string;
   markdown: string;
+}
+
+export interface FetchContentOptions {
+  signal?: AbortSignal;
+  maxBytes?: number;
+  maxOutputCharacters?: number;
+}
+
+export interface ParserContext {
+  providerDocId: string;
+  name: string;
+  mimeType: string;
+  sizeBytes?: number;
+  signal?: AbortSignal;
 }
 
 /** Consumer-provided binary-to-Markdown parser socket. */
 export type ParserFn = (
   bytes: Uint8Array,
   mimeType: string,
+  context?: ParserContext,
 ) => Promise<string>;
 
 /** Minimal source-agnostic connector contract. */
@@ -23,7 +40,7 @@ export interface Connector<
   Document extends ConnectorDocument = ConnectorDocument,
 > {
   listChanges(cursor?: Cursor): Promise<Result>;
-  fetchContent(doc: Document): Promise<Document>;
+  fetchContent(doc: Document, options?: FetchContentOptions): Promise<Document>;
 }
 
 /** Authentication configuration is invalid or cannot be parsed. */
@@ -34,6 +51,20 @@ export class ConnectorAuthError extends Error {
 /** An item cannot be extracted through the configured connector. */
 export class ConnectorExtractionError extends Error {
   override readonly name = "ConnectorExtractionError";
+  constructor(
+    message: string,
+    readonly reason: "unsupported" | "encrypted" | "malformed" | "resourceLimit" | "needsOcr" | "parserFailed" = "parserFailed",
+    readonly providerDocId?: string,
+  ) { super(message); }
+}
+
+/** Content changed while it was being fetched. Retry discovery/fetch. */
+export class ConnectorContentChangedError extends Error {
+  override readonly name = "ConnectorContentChangedError";
+  readonly retryable = true;
+  constructor(readonly providerDocId: string) {
+    super(`Document ${providerDocId} changed during content fetch`);
+  }
 }
 
 /** Source scope configuration is invalid. */

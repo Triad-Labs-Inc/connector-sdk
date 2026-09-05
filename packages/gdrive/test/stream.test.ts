@@ -30,6 +30,14 @@ beforeEach(() => {
 });
 
 describe("streaming discovery", () => {
+  it("reports provider versions and safe optional file sizes", async () => {
+    list.mockResolvedValue({ data: { files: [file("sized", { size: "42", version: "9" }), file("unknown"), file("unsafe", { size: "9007199254740992" })] } });
+    const documents = (await collect(make()())).flatMap(e => e.kind === "document" ? [e.document] : []);
+    expect(documents[0]).toMatchObject({ sizeBytes: 42, providerVersion: "9" });
+    expect(documents[1]).not.toHaveProperty("sizeBytes");
+    expect(documents[2]).not.toHaveProperty("sizeBytes");
+  });
+
   it("resumes a paginated walk with pending children on a new instance", async () => {
     list.mockImplementation(async ({ q, pageToken }) => ({ data:
       q.startsWith("'child'") ? { files: [file("nested")] } : pageToken === "page2" ? { files: [file("second")] } :

@@ -1,6 +1,6 @@
 {
   "name": "@triadlabs/connectors-core",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Shared contracts for Triad Labs connectors",
   "license": "MIT",
   "type": "module",
@@ -22,5 +22,8 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "devDependencies": {
+    "@types/node": "^20"
   }
 }

@@ -136,6 +136,8 @@ export function createIterateChanges({ drive, getFolderId }: Options) {
       yield { kind: "document", discoveredVia: shortcut ? "shortcut" : "direct", document: {
         providerDocId: item.id, name: item.name, mimeType: item.mimeType,
         modifiedAt: item.modifiedTime ?? "", contentHash: "", markdown: "",
+        ...(item.size != null && Number.isSafeInteger(Number(item.size)) && Number(item.size) >= 0 ? { sizeBytes: Number(item.size) } : {}),
+        ...(item.version ? { providerVersion: item.version } : {}),
         ...(item.webViewLink ? { url: item.webViewLink, webViewLink: item.webViewLink } : {}),
       } };
     }

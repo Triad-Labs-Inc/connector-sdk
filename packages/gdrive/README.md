@@ -172,7 +172,7 @@ All errors are typed and catchable with `instanceof`:
 | `ConnectorAuthError` | Credentials are malformed or cannot be parsed |
 | `ConnectorScopeError` | `scope` is missing/invalid, or folder ID/URL is malformed |
 | `ConnectorExtractionError` | No parser for a binary type, or extraction of a folder/shortcut was attempted |
-| `ConnectorCursorExpiredError` | The Drive changes cursor expired (Drive retains ~30 days) — catch this and re-run a full backfill |
+| `ConnectorCursorExpiredError` | The provider rejected the persisted changes cursor — catch this and re-run a full backfill |
 
 ```ts
 import { ConnectorCursorExpiredError } from "@triadlabs/connectors-gdrive";
@@ -198,10 +198,6 @@ try {
   `includeItemsFromAllDrives` are set on every request).
 - The special folder ID `root` is resolved once and shared by both backfill
   and incremental modes.
-
-## License
-
-MIT
 
 ## Streaming discovery and durable checkpoints
 
@@ -263,3 +259,48 @@ it is never a successful empty inventory.
 `retryAfterMs` without copying credential-bearing provider response bodies into
 its message. Rate limits, temporary failures, and cancellation never produce
 removal events. The consumer owns retries and scheduling.
+
+## Bounded content fetching
+
+Pass limits and a deadline for each fetch in a durable worker:
+
+```ts
+const full = await connector.fetchContent(doc, {
+  signal: AbortSignal.timeout(60_000),
+  maxBytes: 20 * 1024 * 1024,
+  maxOutputCharacters: 1_000_000,
+});
+```
+
+These numbers are example consumer policy. Limits are optional for compatibility;
+without them there is no SDK byte/output cap. `maxBytes` is checked against known
+binary size before downloading and against actual bytes while reading downloads
+and native exports. Metadata-only documents expose optional `sizeBytes` and
+`providerVersion`. Google export size may differ from stored file size, so exports
+always use the runtime byte check.
+
+`fetchContent` reads provider metadata before and after the download. It throws
+`ConnectorContentChangedError` if the version, modification time, or MIME type
+changes between those reads. Retry that file. Successful results contain the
+metadata observed for the fetched content, which may be newer than discovery.
+This is a consistency check around the download, not a pinned Drive revision.
+
+Parsers receive an optional third argument with `providerDocId`, `name`, `mimeType`,
+`sizeBytes`, and `signal`; existing two-argument parsers still work. Throw
+`ConnectorExtractionError(message, reason)` for deterministic failures. Reasons
+are `unsupported`, `encrypted`, `malformed`, `resourceLimit`, `needsOcr`, and
+`parserFailed`. The SDK attaches the document ID. A parser that calls another
+service can throw `ConnectorProviderError` to preserve retry metadata.
+
+The output limit is checked after decoding or parsing, using JavaScript string
+length (UTF-16 code units). It cannot constrain the parser's own allocations or
+interrupt synchronous parser code. Run parsers in a worker/process that your
+application can terminate when enforcing CPU, memory, or wall-time budgets.
+Cancellation interrupts Drive requests and streams and is passed to the parser.
+
+See [Durable sync integration](../../docs/DURABLE_SYNC.md) for checkpoint,
+reconciliation, worker, and verification responsibilities.
+
+## License
+
+MIT

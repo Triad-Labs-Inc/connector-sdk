@@ -12,6 +12,9 @@ import type {
 } from "./types.js";
 
 export {
+  ConnectorContentChangedError,
+  type FetchContentOptions,
+  type ParserContext,
   ConnectorRescanRequiredError,
   ConnectorProviderError,
   ConnectorResumeError,

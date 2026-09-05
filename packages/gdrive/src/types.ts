@@ -61,7 +61,7 @@ export interface GDriveConnector extends Connector<
 export const FOLDER_MIME = "application/vnd.google-apps.folder";
 export const SHORTCUT_MIME = "application/vnd.google-apps.shortcut";
 export const FILE_FIELDS =
-  "id,name,mimeType,webViewLink,modifiedTime,parents,trashed,shortcutDetails(targetId,targetMimeType)";
+  "id,name,mimeType,webViewLink,modifiedTime,size,version,parents,trashed,shortcutDetails(targetId,targetMimeType)";
 
 /** Opaque, serializable state. Persist the entire object after prior writes commit. */
 export interface GDriveCheckpoint {
