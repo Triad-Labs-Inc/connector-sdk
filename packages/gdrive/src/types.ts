@@ -1,4 +1,3 @@
-import type { drive_v3 } from "googleapis";
 import type {
   Connector,
   ConnectorDocument,
@@ -43,6 +42,7 @@ export interface SkippedEntry {
 }
 
 export interface GDriveSyncResult {
+  coverage?: "complete" | "partial";
   documents: ConnectorDocument[];
   removed: string[];
   skipped: SkippedEntry[];
@@ -62,18 +62,6 @@ export const FOLDER_MIME = "application/vnd.google-apps.folder";
 export const SHORTCUT_MIME = "application/vnd.google-apps.shortcut";
 export const FILE_FIELDS =
   "id,name,mimeType,webViewLink,modifiedTime,parents,trashed,shortcutDetails(targetId,targetMimeType)";
-
-export interface WalkState {
-  drive: drive_v3.Drive;
-  documents: ConnectorDocument[];
-  skipped: SkippedEntry[];
-  visitedFiles: Set<string>;
-  visitedFolders: Set<string>;
-  resolvingTargets: Set<string>;
-  knownTargetFiles: Set<string>;
-  knownTargetFolders: Set<string>;
-  scopeCache?: Map<string, boolean>;
-}
 
 /** Opaque, serializable state. Persist the entire object after prior writes commit. */
 export interface GDriveCheckpoint {

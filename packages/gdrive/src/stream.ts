@@ -1,5 +1,6 @@
 import type { drive_v3 } from "googleapis";
-import { ConnectorCursorExpiredError, ConnectorResumeError } from "@triadlabs/connectors-core";
+import { ConnectorCursorExpiredError, ConnectorResumeError, ConnectorRescanRequiredError } from "@triadlabs/connectors-core";
+import { providerError, providerStatus } from "./provider-error.js";
 import { FILE_FIELDS, FOLDER_MIME, SHORTCUT_MIME } from "./types.js";
 import type { GDriveCheckpoint, GDriveStreamEvent, GDriveSyncResume, SkippedEntry } from "./types.js";
 
@@ -34,7 +35,7 @@ function validate(value: GDriveCheckpoint, scope: string): void {
 }
 
 export function createIterateChanges({ drive, getFolderId }: Options) {
-  return async function* iterateChanges(
+  async function* run(
     resume?: GDriveCheckpoint | GDriveSyncResume,
     options: { signal?: AbortSignal } = {},
   ): AsyncGenerator<GDriveStreamEvent> {
@@ -76,7 +77,7 @@ export function createIterateChanges({ drive, getFolderId }: Options) {
         version: 1, scope, phase: resume?.cursor ? "incremental" : "backfill",
         cursor: { pageToken: token }, pendingFolders: resume?.cursor ? [] : [{ id: folderId ?? null }],
         visitedFiles: [], visitedFolders: [],
-        visitedTargets: copy(resume?.visitedTargets ?? { files: [], folders: [] }),
+        visitedTargets: copy(resume?.cursor ? resume.visitedTargets ?? { files: [], folders: [] } : { files: [], folders: [] }),
         filesDiscovered: 0, foldersVisited: 0, coverage: "complete",
       };
     }
@@ -96,7 +97,7 @@ export function createIterateChanges({ drive, getFolderId }: Options) {
       try {
         target = await drive.files.get({ fileId: targetId, fields: FILE_FIELDS, supportsAllDrives: true }, { signal });
       } catch (error) {
-        const status = (error as { response?: { status?: number }; code?: number }).response?.status ?? (error as { code?: number }).code;
+        const status = providerStatus(error);
         if (status === 404) return skip("shortcut_target_unreadable");
         throw error;
       }
@@ -148,8 +149,13 @@ export function createIterateChanges({ drive, getFolderId }: Options) {
         if (id === folderId || state.visitedTargets.folders.includes(id)) return true;
         if (seen.has(id)) continue;
         seen.add(id);
-        const parent = await drive.files.get({ fileId: id, fields: "id,parents", supportsAllDrives: true }, { signal });
-        parents.push(...(parent.data.parents ?? []));
+        try {
+          const parent = await drive.files.get({ fileId: id, fields: "id,parents", supportsAllDrives: true }, { signal });
+          parents.push(...(parent.data.parents ?? []));
+        } catch (error) {
+          if (providerStatus(error) === 404) throw new ConnectorRescanRequiredError("A parent is no longer readable; rescan source membership");
+          throw error;
+        }
       }
       return false;
     }
@@ -193,9 +199,16 @@ export function createIterateChanges({ drive, getFolderId }: Options) {
         for (const change of page.data.changes ?? []) {
           const id = change.fileId ?? change.file?.id;
           if (!id) throw new Error("Drive change is missing its file ID");
+          const structural = change.file?.mimeType === FOLDER_MIME || change.file?.mimeType === SHORTCUT_MIME;
+          const uncertainRemoval = (change.removed || !change.file || change.file.trashed) &&
+            (folderId !== undefined || state.visitedTargets.files.length > 0 || state.visitedTargets.folders.length > 0);
+          if ((structural && (folderId !== undefined || change.file?.mimeType === SHORTCUT_MIME)) || uncertainRemoval) {
+            throw new ConnectorRescanRequiredError("Drive folder, shortcut, or removal changed source reachability; run a new backfill");
+          }
           if (change.removed || !change.file || change.file.trashed) {
             yield { kind: "removed", providerDocId: id, reason: change.file?.trashed ? "trashed" : "accessLost" };
           } else if (await inScope(change.file)) yield* document(change.file, false);
+          else yield { kind: "removed", providerDocId: id, reason: "outOfScope" };
         }
         const token = page.data.nextPageToken ?? page.data.newStartPageToken;
         if (!token) throw new Error("Drive returned no continuation token");
@@ -212,5 +225,9 @@ export function createIterateChanges({ drive, getFolderId }: Options) {
     state.visitedFiles = [];
     signal?.throwIfAborted();
     yield { kind: "complete", phase, coverage: state.coverage, resume: copy(state) };
+  }
+  return async function* iterateChanges(resume?: GDriveCheckpoint | GDriveSyncResume, options: { signal?: AbortSignal } = {}): AsyncGenerator<GDriveStreamEvent> {
+    try { yield* run(resume, options); }
+    catch (error) { options.signal?.throwIfAborted(); throw providerError(error, "Drive discovery"); }
   };
 }

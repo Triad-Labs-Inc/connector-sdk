@@ -239,3 +239,25 @@ resume value can start the iterator between scans, but cannot represent an
 unfinished walk. Save streaming checkpoints whole rather than extracting those
 two fields. Keep credentials/source configuration paired with their own resume
 state; resetting or replacing credentials requires a deliberate new backfill.
+
+### Membership changes
+
+Folder-scoped incremental discovery emits `outOfScope` removal events for live
+files that moved out. Folder/shortcut changes and ambiguous removals raise
+`ConnectorRescanRequiredError` before advancing that page's checkpoint. Start a
+fresh backfill and reconcile its complete inventory against your source rows.
+This deliberately trades a rescan for precise subtree bookkeeping. Structural
+changes elsewhere in the account can also request a rescan; scope-level webhook
+optimization and a persistent reachability graph are not implemented.
+
+Both discovery APIs now use the same engine. Existing consumers that catch
+`ConnectorCursorExpiredError` also catch the rescan-required subtype. The CLI
+keeps existing files when a replacement backfill has partial coverage or skips.
+Missing/unresolved shortcut targets are reported as partial coverage: repair the
+source or retry before retiring unseen documents. A root lookup failure throws;
+it is never a successful empty inventory.
+
+`ConnectorProviderError` exposes `status`, `retryable`, and optional
+`retryAfterMs` without copying credential-bearing provider response bodies into
+its message. Rate limits, temporary failures, and cancellation never produce
+removal events. The consumer owns retries and scheduling.

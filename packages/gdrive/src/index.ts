@@ -12,6 +12,8 @@ import type {
 } from "./types.js";
 
 export {
+  ConnectorRescanRequiredError,
+  ConnectorProviderError,
   ConnectorResumeError,
   ConnectorAuthError,
   ConnectorCursorExpiredError,

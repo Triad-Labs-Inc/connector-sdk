@@ -54,3 +54,19 @@ export class ConnectorCursorExpiredError extends Error {
 export class ConnectorResumeError extends ConnectorCursorExpiredError {
   override readonly name = "ConnectorResumeError";
 }
+
+/** Provider topology changed; rebuild this source's inventory before advancing. */
+export class ConnectorRescanRequiredError extends ConnectorCursorExpiredError {
+  override readonly name = "ConnectorRescanRequiredError";
+}
+
+/** Provider failure with safe retry metadata; contains no credential or response body. */
+export class ConnectorProviderError extends Error {
+  override readonly name = "ConnectorProviderError";
+  constructor(
+    message: string,
+    readonly status: number | undefined,
+    readonly retryable: boolean,
+    readonly retryAfterMs?: number,
+  ) { super(message); }
+}
