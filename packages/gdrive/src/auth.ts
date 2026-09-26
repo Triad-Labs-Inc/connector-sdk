@@ -18,6 +18,18 @@ export interface GDriveOAuthRefreshTokenAuth {
   refreshToken: string;
 }
 
+/**
+ * Access tokens minted by the consumer, for example through keyless
+ * service-account impersonation. The connector calls `getAccessToken`
+ * whenever it has no token or the current one is about to expire, so long
+ * syncs keep working past a single token's lifetime.
+ */
+export interface GDriveAccessTokenAuth {
+  type: "access-token";
+  /** Must resolve to a token for the drive.readonly scope and its expiry in epoch milliseconds. */
+  getAccessToken: () => Promise<{ accessToken: string; expiresAt: number }>;
+}
+
 /** Google OAuth application settings used during the consent flow. */
 export interface GDriveOAuthClientConfig {
   clientId: string;
@@ -29,7 +41,8 @@ export interface GDriveOAuthClientConfig {
 
 export type GDriveCredentials =
   | GDriveServiceAccountAuth
-  | GDriveOAuthRefreshTokenAuth;
+  | GDriveOAuthRefreshTokenAuth
+  | GDriveAccessTokenAuth;
 
 /** @deprecated Use GDriveCredentials. */
 export type GDriveAuth = GDriveCredentials;
@@ -147,9 +160,28 @@ export function createDriveClient(
     return google.drive({ version: "v3", auth });
   }
 
+  if (credentials.type === "access-token") {
+    const { getAccessToken } = credentials;
+    if (typeof getAccessToken !== "function") {
+      throw new ConnectorAuthError("getAccessToken must be a function");
+    }
+
+    const auth = new google.auth.OAuth2();
+    auth.refreshHandler = async () => {
+      const token = await getAccessToken();
+      requireRecord(token, "getAccessToken result");
+      requireNonEmpty(token.accessToken, "accessToken");
+      if (typeof token.expiresAt !== "number" || !Number.isFinite(token.expiresAt)) {
+        throw new ConnectorAuthError("expiresAt must be a finite number");
+      }
+      return { access_token: token.accessToken, expiry_date: token.expiresAt };
+    };
+    return google.drive({ version: "v3", auth });
+  }
+
   if (credentials.type !== "oauth") {
     throw new ConnectorAuthError(
-      'credentials.type must be "service-account" or "oauth"',
+      'credentials.type must be "service-account", "oauth", or "access-token"',
     );
   }
 

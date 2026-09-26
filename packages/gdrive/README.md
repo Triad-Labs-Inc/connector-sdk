@@ -67,7 +67,7 @@ const next = await connector.listChanges(loadResume());
 
 ## Authentication
 
-Two credential types, both using the `drive.readonly` scope. The package does
+Three credential types, all using the `drive.readonly` scope. The package does
 not store credentials, run an OAuth consent redirect, or schedule
 synchronization — that is your job.
 
@@ -90,6 +90,24 @@ createGDriveConnector({
     clientId: "...",
     clientSecret: "***",
     refreshToken: "***",
+  },
+  scope: { folder: "<id>" },
+});
+```
+
+**Access token** (bring your own tokens, e.g. keyless service-account
+impersonation through the IAM Credentials API). The connector calls
+`getAccessToken` whenever it has no token or the current one is about to
+expire, so return a fresh token each time:
+
+```ts
+createGDriveConnector({
+  auth: {
+    type: "access-token",
+    getAccessToken: async () => {
+      const token = await mintToken(); // your code
+      return { accessToken: token.value, expiresAt: token.expiresAtMs };
+    },
   },
   scope: { folder: "<id>" },
 });

@@ -32,6 +32,7 @@ export {
   exchangeAuthorizationCode,
   getAuthorizationUrl,
   type GDriveAuth,
+  type GDriveAccessTokenAuth,
   type GDriveCredentials,
   type GDriveOAuthClientConfig,
   type GDriveOAuthRefreshTokenAuth,
