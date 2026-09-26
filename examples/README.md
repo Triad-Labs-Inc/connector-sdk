@@ -60,3 +60,15 @@ Expected outcomes:
 - empty list → auth works, but nothing is shared with the robot email
 - HTTP 403 → Drive API is not enabled in the cloud project
 - `ConnectorAuthError` → the JSON key is malformed
+
+## `impersonation/`
+
+Live check for the `access-token` credential type: keyless service-account
+impersonation, where your gcloud login mints short-lived Drive tokens for a
+service account the test folder is shared with. See
+[`impersonation/README.md`](impersonation/README.md).
+
+```bash
+cd examples/impersonation
+SERVICE_ACCOUNT=<robot email> pnpm start --folder <id-or-url> --force-refresh
+```
