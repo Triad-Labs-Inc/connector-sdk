@@ -60,7 +60,13 @@ let firstDocument: Parameters<typeof connector.fetchContent>[0] | undefined;
 for await (const event of connector.iterateChanges()) {
   if (event.kind === "document") {
     documents += 1;
-    firstDocument ??= event.document;
+    // No parser is configured here, so only pick a file the connector reads natively.
+    if (
+      event.document.mimeType.startsWith("text/") ||
+      event.document.mimeType.startsWith("application/vnd.google-apps.")
+    ) {
+      firstDocument ??= event.document;
+    }
     console.log(`  ${event.document.name}`);
   } else if (event.kind === "skipped") {
     console.log(`  skipped ${event.entry.id}: ${event.entry.reason}`);
