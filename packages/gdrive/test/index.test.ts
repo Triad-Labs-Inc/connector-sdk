@@ -136,6 +136,51 @@ describe("createDriveClient", () => {
     ).toThrow(ConnectorAuthError);
   });
 
+  it("builds a Drive client from consumer-minted access tokens", async () => {
+    const getAccessToken = vi.fn(async () => ({
+      accessToken: "ya29.token",
+      expiresAt: 1_900_000_000_000,
+    }));
+
+    createDriveClient({ type: "access-token", getAccessToken });
+
+    expect(oauth2Mock).toHaveBeenCalledWith();
+    expect(driveMock).toHaveBeenCalledWith({
+      version: "v3",
+      auth: expect.any(oauth2Mock),
+    });
+    const client = driveMock.mock.calls[0]![0].auth as {
+      refreshHandler: () => Promise<unknown>;
+    };
+    await expect(client.refreshHandler()).resolves.toEqual({
+      access_token: "ya29.token",
+      expiry_date: 1_900_000_000_000,
+    });
+    expect(getAccessToken).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects access-token credentials without a callback", () => {
+    expect(() =>
+      createDriveClient({ type: "access-token" } as never),
+    ).toThrow(ConnectorAuthError);
+  });
+
+  it.each([
+    { accessToken: "", expiresAt: 1 },
+    { accessToken: "token", expiresAt: Number.NaN },
+    { accessToken: "token" },
+    null,
+  ])("rejects an invalid minted token: %j", async (token) => {
+    createDriveClient({
+      type: "access-token",
+      getAccessToken: async () => token as never,
+    });
+    const client = driveMock.mock.calls[0]![0].auth as {
+      refreshHandler: () => Promise<unknown>;
+    };
+    await expect(client.refreshHandler()).rejects.toThrow(ConnectorAuthError);
+  });
+
   it("configures OAuth credentials and the read-only scope", () => {
     createDriveClient({
       type: "oauth",
